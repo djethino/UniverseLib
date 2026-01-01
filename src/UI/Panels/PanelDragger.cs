@@ -350,12 +350,25 @@ public class PanelDragger
         Rect.anchorMin = new Vector2(anchorMin.x, anchorMin.y);
         Rect.anchorMax = new Vector2(anchorMax.x, anchorMax.y);
 
+        // Enforce minimum size
         if (Rect.rect.width < UIPanel.MinWidth)
         {
             Rect.anchorMin = new Vector2(prevMin.x, Rect.anchorMin.y);
             Rect.anchorMax = new Vector2(prevMax.x, Rect.anchorMax.y);
         }
         if (Rect.rect.height < UIPanel.MinHeight)
+        {
+            Rect.anchorMin = new Vector2(Rect.anchorMin.x, prevMin.y);
+            Rect.anchorMax = new Vector2(Rect.anchorMax.x, prevMax.y);
+        }
+
+        // Enforce maximum size
+        if (Rect.rect.width > UIPanel.MaxWidth)
+        {
+            Rect.anchorMin = new Vector2(prevMin.x, Rect.anchorMin.y);
+            Rect.anchorMax = new Vector2(prevMax.x, Rect.anchorMax.y);
+        }
+        if (Rect.rect.height > UIPanel.MaxHeight)
         {
             Rect.anchorMin = new Vector2(Rect.anchorMin.x, prevMin.y);
             Rect.anchorMax = new Vector2(Rect.anchorMax.x, prevMax.y);

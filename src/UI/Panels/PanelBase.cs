@@ -17,6 +17,19 @@ namespace UniverseLib.UI.Panels
 
         public abstract int MinWidth { get; }
         public abstract int MinHeight { get; }
+
+        /// <summary>
+        /// Maximum width for resize. Override to constrain panel width.
+        /// Default is int.MaxValue (no constraint).
+        /// </summary>
+        public virtual int MaxWidth => int.MaxValue;
+
+        /// <summary>
+        /// Maximum height for resize. Override to constrain panel height.
+        /// Default is int.MaxValue (no constraint).
+        /// </summary>
+        public virtual int MaxHeight => int.MaxValue;
+
         public abstract Vector2 DefaultAnchorMin { get; }
         public abstract Vector2 DefaultAnchorMax { get; }
         public virtual Vector2 DefaultPosition { get; }
