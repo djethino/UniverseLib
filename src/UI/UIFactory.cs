@@ -23,41 +23,54 @@ namespace UniverseLib.UI
 
         /// <summary>
         /// Default colors used by UIFactory. Modify these to customize the theme.
-        /// Colors are slightly brighter than original for better visibility.
+        /// Modern dark theme with slate blue tints and purple accents.
         /// </summary>
         public static class Colors
         {
-            // Background colors
-            public static Color PanelBackground = new(0.15f, 0.15f, 0.17f, 0.95f);
-            public static Color SlightBackground = new(0.12f, 0.12f, 0.14f, 1f);
-            public static Color DarkBackground = new(0.08f, 0.08f, 0.10f, 1f);
+            // Background colors (slate blue tint for modern look)
+            public static Color PanelBackground = new(0.11f, 0.13f, 0.17f, 0.98f);   // Main panel background
+            public static Color SlightBackground = new(0.09f, 0.11f, 0.14f, 1f);     // Slightly darker
+            public static Color DarkBackground = new(0.06f, 0.07f, 0.09f, 1f);       // Darkest elements
+            public static Color TitleBarBackground = new(0.08f, 0.09f, 0.12f, 1f);   // Title bar
+
+            // Primary accent color (purple - matches website)
+            public static Color Accent = new(0.55f, 0.36f, 0.96f, 1f);               // #8b5cf6
+            public static Color AccentHighlight = new(0.65f, 0.48f, 1f, 1f);         // Lighter purple
+            public static Color AccentPressed = new(0.45f, 0.28f, 0.85f, 1f);        // Darker purple
 
             // Interactive element colors
-            public static Color ButtonNormal = new(0.25f, 0.25f, 0.28f, 1f);
-            public static Color ButtonHighlight = new(0.35f, 0.35f, 0.40f, 1f);
-            public static Color ButtonPressed = new(0.20f, 0.20f, 0.23f, 1f);
+            public static Color ButtonNormal = new(0.18f, 0.20f, 0.25f, 1f);         // Slate buttons
+            public static Color ButtonHighlight = new(0.25f, 0.28f, 0.35f, 1f);
+            public static Color ButtonPressed = new(0.14f, 0.16f, 0.20f, 1f);
 
             // Slider/Scrollbar colors
-            public static Color SliderBackground = new(0.12f, 0.12f, 0.14f, 1f);
-            public static Color SliderFill = new(0.35f, 0.35f, 0.40f, 1f);
-            public static Color SliderHandle = new(0.55f, 0.55f, 0.60f, 1f);
+            public static Color SliderBackground = new(0.10f, 0.12f, 0.15f, 1f);
+            public static Color SliderFill = new(0.55f, 0.36f, 0.96f, 0.8f);         // Purple fill
+            public static Color SliderHandle = new(0.55f, 0.55f, 0.65f, 1f);
 
             // Input field colors
-            public static Color InputBackground = new(0.10f, 0.10f, 0.12f, 1f);
-            public static Color PlaceholderText = new(0.5f, 0.5f, 0.55f, 1f);
+            public static Color InputBackground = new(0.08f, 0.09f, 0.12f, 1f);
+            public static Color InputBorder = new(0.20f, 0.22f, 0.28f, 1f);
+            public static Color PlaceholderText = new(0.45f, 0.48f, 0.55f, 1f);
 
             // Toggle colors
-            public static Color ToggleBackground = new(0.08f, 0.08f, 0.10f, 0.85f);
-            public static Color ToggleCheckmark = new(0.7f, 0.95f, 0.7f, 0.5f);
+            public static Color ToggleBackground = new(0.10f, 0.12f, 0.15f, 1f);
+            public static Color ToggleCheckmark = new(0.55f, 0.36f, 0.96f, 0.9f);    // Purple checkmark
 
             // Dropdown colors
-            public static Color DropdownBackground = new(0.10f, 0.10f, 0.12f, 0.9f);
-            public static Color DropdownItemNormal = new(0.30f, 0.30f, 0.35f, 1f);
-            public static Color DropdownItemHighlight = new(0.30f, 0.55f, 0.35f, 1f);
+            public static Color DropdownBackground = new(0.10f, 0.12f, 0.15f, 0.98f);
+            public static Color DropdownItemNormal = new(0.18f, 0.20f, 0.25f, 1f);
+            public static Color DropdownItemHighlight = new(0.55f, 0.36f, 0.96f, 0.6f); // Purple highlight
 
             // Scroll view colors
-            public static Color ScrollViewBackground = new(0.20f, 0.20f, 0.22f, 1f);
-            public static Color ViewportBackground = new(0.12f, 0.12f, 0.14f, 1f);
+            public static Color ScrollViewBackground = new(0.13f, 0.15f, 0.19f, 1f);
+            public static Color ViewportBackground = new(0.09f, 0.11f, 0.14f, 1f);
+
+            // Status colors
+            public static Color Success = new(0.34f, 0.80f, 0.48f, 1f);              // Green
+            public static Color Warning = new(0.95f, 0.73f, 0.29f, 1f);              // Amber
+            public static Color Error = new(0.95f, 0.41f, 0.41f, 1f);                // Red
+            public static Color Info = new(0.38f, 0.73f, 0.98f, 1f);                 // Blue
         }
 
         #endregion
@@ -209,7 +222,8 @@ namespace UniverseLib.UI
         public static GameObject CreatePanel(string name, GameObject parent, out GameObject contentHolder, Color? bgColor = null)
         {
             GameObject panelObj = CreateUIObject(name, parent);
-            SetLayoutGroup<VerticalLayoutGroup>(panelObj, true, true, true, true, 0, 1, 1, 1, 1);
+            // Minimal border for cleaner look
+            SetLayoutGroup<VerticalLayoutGroup>(panelObj, true, true, true, true, 0, 0, 0, 0, 0);
 
             RectTransform rect = panelObj.GetComponent<RectTransform>();
             rect.anchorMin = Vector2.zero;
@@ -217,18 +231,18 @@ namespace UniverseLib.UI
             rect.anchoredPosition = Vector2.zero;
             rect.sizeDelta = Vector2.zero;
 
-            panelObj.AddComponent<Image>().color = Color.black;
+            // Subtle border color instead of pure black
+            panelObj.AddComponent<Image>().color = Colors.DarkBackground;
             panelObj.AddComponent<RectMask2D>();
 
             contentHolder = CreateUIObject("Content", panelObj);
 
             Image bgImage = contentHolder.AddComponent<Image>();
             bgImage.type = Image.Type.Filled;
-            bgImage.color = bgColor == null
-                ? new(0.07f, 0.07f, 0.07f)
-                : (Color)bgColor;
+            bgImage.color = bgColor ?? Colors.PanelBackground;
 
-            SetLayoutGroup<VerticalLayoutGroup>(contentHolder, true, true, true, true, 3, 3, 3, 3, 3);
+            // Tighter padding for modern look
+            SetLayoutGroup<VerticalLayoutGroup>(contentHolder, true, true, true, true, 2, 2, 2, 2, 2);
 
             return panelObj;
         }
@@ -518,16 +532,16 @@ namespace UniverseLib.UI
 
             GameObject checkBgObj = CreateUIObject("Background", toggleObj);
             Image bgImage = checkBgObj.AddComponent<Image>();
-            bgImage.color = bgColor == default ? new Color(0.04f, 0.04f, 0.04f, 0.75f) : bgColor;
+            bgImage.color = bgColor == default ? Colors.ToggleBackground : bgColor;
 
             SetLayoutGroup<HorizontalLayoutGroup>(checkBgObj, true, true, true, true, 0, 2, 2, 2, 2);
             SetLayoutElement(checkBgObj, minWidth: checkWidth, flexibleWidth: 0, minHeight: checkHeight, flexibleHeight: 0);
 
-            // Check mark image
+            // Check mark image (purple accent)
 
             GameObject checkMarkObj = CreateUIObject("Checkmark", checkBgObj);
             Image checkImage = checkMarkObj.AddComponent<Image>();
-            checkImage.color = new Color(0.8f, 1, 0.8f, 0.3f);
+            checkImage.color = Colors.ToggleCheckmark;
 
             // Label 
 
@@ -560,7 +574,7 @@ namespace UniverseLib.UI
 
             Image mainImage = mainObj.AddComponent<Image>();
             mainImage.type = Image.Type.Sliced;
-            mainImage.color = new Color(0, 0, 0, 0.5f);
+            mainImage.color = Colors.InputBackground;
 
             InputField inputField = mainObj.AddComponent<InputField>();
             Navigation nav = inputField.navigation;
@@ -571,8 +585,9 @@ namespace UniverseLib.UI
             inputField.transition = Selectable.Transition.ColorTint;
             inputField.targetGraphic = mainImage;
 
+            // Subtle highlight when focused
             RuntimeHelper.Instance.Internal_SetColorBlock(inputField, new Color(1, 1, 1, 1),
-                new Color(0.95f, 0.95f, 0.95f, 1.0f), new Color(0.78f, 0.78f, 0.78f, 1.0f));
+                new Color(1f, 1f, 1f, 1.0f), new Color(0.85f, 0.85f, 0.85f, 1.0f));
 
             GameObject textArea = CreateUIObject("TextArea", mainObj);
             textArea.AddComponent<RectMask2D>();
@@ -587,7 +602,7 @@ namespace UniverseLib.UI
             Text placeholderText = placeHolderObj.AddComponent<Text>();
             SetDefaultTextValues(placeholderText);
             placeholderText.text = placeHolderText ?? "...";
-            placeholderText.color = new Color(0.5f, 0.5f, 0.5f, 1.0f);
+            placeholderText.color = Colors.PlaceholderText;
             placeholderText.horizontalOverflow = HorizontalWrapMode.Wrap;
             placeholderText.alignment = TextAnchor.MiddleLeft;
             placeholderText.fontSize = 14;
@@ -673,18 +688,18 @@ namespace UniverseLib.UI
             arrowRect.anchoredPosition = new Vector2(-15f, 0f);
 
             Image itemBgImage = itemBgObj.AddComponent<Image>();
-            itemBgImage.color = new Color(0.25f, 0.35f, 0.25f, 1.0f);
+            itemBgImage.color = Colors.DropdownItemNormal;
 
             Toggle itemToggle = itemObj.AddComponent<Toggle>();
             itemToggle.targetGraphic = itemBgImage;
             itemToggle.isOn = true;
             RuntimeHelper.Instance.Internal_SetColorBlock(itemToggle,
-                new Color(0.35f, 0.35f, 0.35f, 1.0f), new Color(0.25f, 0.55f, 0.25f, 1.0f));
+                Colors.DropdownItemNormal, Colors.DropdownItemHighlight);
 
             itemToggle.onValueChanged.AddListener((bool val) => { itemToggle.OnDeselect(null); });
             Image templateImage = templateObj.AddComponent<Image>();
             templateImage.type = Image.Type.Sliced;
-            templateImage.color = Color.black;
+            templateImage.color = Colors.DarkBackground;
 
             ScrollRect scrollRect = templateObj.AddComponent<ScrollRect>();
             scrollRect.scrollSensitivity = 35;
@@ -706,7 +721,7 @@ namespace UniverseLib.UI
             labelText.alignment = TextAnchor.MiddleLeft;
 
             Image dropdownImage = dropdownObj.AddComponent<Image>();
-            dropdownImage.color = new Color(0.04f, 0.04f, 0.04f, 0.75f);
+            dropdownImage.color = Colors.DropdownBackground;
             dropdownImage.type = Image.Type.Sliced;
 
             dropdown = dropdownObj.AddComponent<Dropdown>();
@@ -933,7 +948,7 @@ namespace UniverseLib.UI
             mainRect.anchorMax = Vector2.one;
             Image mainImage = mainObj.AddComponent<Image>();
             mainImage.type = Image.Type.Filled;
-            mainImage.color = (color == default) ? new Color(0.3f, 0.3f, 0.3f, 1f) : color;
+            mainImage.color = (color == default) ? Colors.ScrollViewBackground : color;
 
             SetLayoutElement(mainObj, flexibleHeight: 9999, flexibleWidth: 9999);
 
@@ -943,7 +958,7 @@ namespace UniverseLib.UI
             viewportRect.anchorMax = Vector2.one;
             viewportRect.pivot = new Vector2(0.0f, 1.0f);
             viewportRect.offsetMax = new Vector2(-28, 0);
-            viewportObj.AddComponent<Image>().color = new(0.1f, 0.1f, 0.1f, 1);
+            viewportObj.AddComponent<Image>().color = Colors.ViewportBackground;
             viewportObj.AddComponent<Mask>().showMaskGraphic = false;
 
             content = CreateUIObject("Content", viewportObj);

@@ -140,33 +140,42 @@ namespace UniverseLib.UI.Panels
 
         public virtual void ConstructUI()
         {
-            // create core canvas 
+            // create core canvas
             uiRoot = UIFactory.CreatePanel(Name, Owner.Panels.PanelHolder, out GameObject contentRoot);
             ContentRoot = contentRoot;
             Rect = this.uiRoot.GetComponent<RectTransform>();
 
-            UIFactory.SetLayoutGroup<VerticalLayoutGroup>(this.ContentRoot, false, false, true, true, 2, 2, 2, 2, 2, TextAnchor.UpperLeft);
+            UIFactory.SetLayoutGroup<VerticalLayoutGroup>(this.ContentRoot, false, false, true, true, 0, 0, 0, 0, 0, TextAnchor.UpperLeft);
             UIFactory.SetLayoutElement(ContentRoot, 0, 0, flexibleWidth: 9999, flexibleHeight: 9999);
 
-            // Title bar
-            TitleBar = UIFactory.CreateHorizontalGroup(ContentRoot, "TitleBar", false, true, true, true, 2,
-                new Vector4(2, 2, 2, 2), new Color(0.06f, 0.06f, 0.06f));
-            UIFactory.SetLayoutElement(TitleBar, minHeight: 25, flexibleHeight: 0);
-
+            // Title bar - cleaner, slimmer design
+            TitleBar = UIFactory.CreateHorizontalGroup(ContentRoot, "TitleBar", false, true, true, true, 0,
+                new Vector4(8, 4, 8, 4), UIFactory.Colors.TitleBarBackground);
+            UIFactory.SetLayoutElement(TitleBar, minHeight: 28, flexibleHeight: 0);
 
             // Title text
+            Text titleTxt = UIFactory.CreateLabel(TitleBar, "TitleText", Name, TextAnchor.MiddleLeft, fontSize: 14);
+            titleTxt.fontStyle = FontStyle.Normal;
+            UIFactory.SetLayoutElement(titleTxt.gameObject, 50, 28, 9999, 0);
 
-            Text titleTxt = UIFactory.CreateLabel(TitleBar, "TitleBar", Name, TextAnchor.MiddleLeft);
-            UIFactory.SetLayoutElement(titleTxt.gameObject, 50, 25, 9999, 0);
-
-            // close button
-
+            // Close button - modern X style
             GameObject closeHolder = UIFactory.CreateUIObject("CloseHolder", TitleBar);
-            UIFactory.SetLayoutElement(closeHolder, minHeight: 25, flexibleHeight: 0, minWidth: 30, flexibleWidth: 9999);
-            UIFactory.SetLayoutGroup<HorizontalLayoutGroup>(closeHolder, false, false, true, true, 3, childAlignment: TextAnchor.MiddleRight);
-            ButtonRef closeBtn = UIFactory.CreateButton(closeHolder, "CloseButton", "—");
-            UIFactory.SetLayoutElement(closeBtn.Component.gameObject, minHeight: 25, minWidth: 25, flexibleWidth: 0);
-            RuntimeHelper.SetColorBlock(closeBtn.Component, new Color(0.33f, 0.32f, 0.31f));
+            UIFactory.SetLayoutElement(closeHolder, minHeight: 28, flexibleHeight: 0, minWidth: 28, flexibleWidth: 0);
+            UIFactory.SetLayoutGroup<HorizontalLayoutGroup>(closeHolder, false, false, true, true, 0, childAlignment: TextAnchor.MiddleCenter);
+
+            ButtonRef closeBtn = UIFactory.CreateButton(closeHolder, "CloseButton", "✕");
+            UIFactory.SetLayoutElement(closeBtn.Component.gameObject, minHeight: 22, minWidth: 22, flexibleWidth: 0);
+            RuntimeHelper.SetColorBlock(closeBtn.Component,
+                UIFactory.Colors.ButtonNormal,
+                new Color(0.85f, 0.35f, 0.35f), // Red on hover
+                new Color(0.70f, 0.25f, 0.25f)); // Darker red on press
+
+            // Make close button text slightly smaller
+            Text closeBtnText = closeBtn.Component.GetComponentInChildren<Text>();
+            if (closeBtnText != null)
+            {
+                closeBtnText.fontSize = 12;
+            }
 
             closeBtn.OnClick += () =>
             {
@@ -177,13 +186,11 @@ namespace UniverseLib.UI.Panels
                 TitleBar.SetActive(false);
 
             // Panel dragger
-
             Dragger = CreatePanelDragger();
             Dragger.OnFinishResize += OnFinishResize;
             Dragger.OnFinishDrag += OnFinishDrag;
 
             // content (abstract)
-
             ConstructPanelContent();
             SetDefaultSizeAndPosition();
 
