@@ -19,6 +19,49 @@ namespace UniverseLib.UI
         internal static Vector2 smallElementSize = new(25, 25);
         internal static Color defaultTextColor = Color.white;
 
+        #region Default Colors
+
+        /// <summary>
+        /// Default colors used by UIFactory. Modify these to customize the theme.
+        /// Colors are slightly brighter than original for better visibility.
+        /// </summary>
+        public static class Colors
+        {
+            // Background colors
+            public static Color PanelBackground = new(0.15f, 0.15f, 0.17f, 0.95f);
+            public static Color SlightBackground = new(0.12f, 0.12f, 0.14f, 1f);
+            public static Color DarkBackground = new(0.08f, 0.08f, 0.10f, 1f);
+
+            // Interactive element colors
+            public static Color ButtonNormal = new(0.25f, 0.25f, 0.28f, 1f);
+            public static Color ButtonHighlight = new(0.35f, 0.35f, 0.40f, 1f);
+            public static Color ButtonPressed = new(0.20f, 0.20f, 0.23f, 1f);
+
+            // Slider/Scrollbar colors
+            public static Color SliderBackground = new(0.12f, 0.12f, 0.14f, 1f);
+            public static Color SliderFill = new(0.35f, 0.35f, 0.40f, 1f);
+            public static Color SliderHandle = new(0.55f, 0.55f, 0.60f, 1f);
+
+            // Input field colors
+            public static Color InputBackground = new(0.10f, 0.10f, 0.12f, 1f);
+            public static Color PlaceholderText = new(0.5f, 0.5f, 0.55f, 1f);
+
+            // Toggle colors
+            public static Color ToggleBackground = new(0.08f, 0.08f, 0.10f, 0.85f);
+            public static Color ToggleCheckmark = new(0.7f, 0.95f, 0.7f, 0.5f);
+
+            // Dropdown colors
+            public static Color DropdownBackground = new(0.10f, 0.10f, 0.12f, 0.9f);
+            public static Color DropdownItemNormal = new(0.30f, 0.30f, 0.35f, 1f);
+            public static Color DropdownItemHighlight = new(0.30f, 0.55f, 0.35f, 1f);
+
+            // Scroll view colors
+            public static Color ScrollViewBackground = new(0.20f, 0.20f, 0.22f, 1f);
+            public static Color ViewportBackground = new(0.12f, 0.12f, 0.14f, 1f);
+        }
+
+        #endregion
+
         /// <summary>
         /// Create a simple UI object with a RectTransform. <paramref name="parent"/> can be null.
         /// </summary>
@@ -57,8 +100,10 @@ namespace UniverseLib.UI
             nav.mode = Navigation.Mode.Explicit;
             selectable.navigation = nav;
 
-            RuntimeHelper.Instance.Internal_SetColorBlock(selectable, new Color(0.2f, 0.2f, 0.2f),
-                new Color(0.3f, 0.3f, 0.3f), new Color(0.15f, 0.15f, 0.15f));
+            RuntimeHelper.Instance.Internal_SetColorBlock(selectable,
+                Colors.ButtonNormal,
+                Colors.ButtonHighlight,
+                Colors.ButtonPressed);
         }
 
 
@@ -1056,6 +1101,61 @@ namespace UniverseLib.UI
 
 
             return mainObj;
+        }
+
+        #endregion
+
+        #region Hover Effects
+
+        /// <summary>
+        /// Add a hover color effect to a UI element. Works on both Mono and IL2CPP.
+        /// Uses IPointerEnterHandler/IPointerExitHandler for IL2CPP compatibility.
+        /// </summary>
+        /// <param name="gameObject">The GameObject with an Image component</param>
+        /// <param name="normalColor">Color when not hovered</param>
+        /// <param name="hoverColor">Color when hovered</param>
+        /// <returns>The HoverEffect component, or null if no Image found</returns>
+        public static Widgets.HoverEffect AddHoverEffect(GameObject gameObject, Color normalColor, Color hoverColor)
+        {
+            if (gameObject == null) return null;
+
+#if CPP
+            Widgets.HoverEffect.RegisterType();
+#endif
+
+            var hoverEffect = gameObject.GetComponent<Widgets.HoverEffect>();
+            if (hoverEffect == null)
+            {
+                hoverEffect = gameObject.AddComponent<Widgets.HoverEffect>();
+            }
+            hoverEffect.Initialize(normalColor, hoverColor);
+            return hoverEffect;
+        }
+
+        #endregion
+
+        #region Dynamic Scrollbar
+
+        /// <summary>
+        /// Configure a ScrollView to auto-hide its scrollbar when content fits.
+        /// The viewport expands to fill the scrollbar space when hidden.
+        /// </summary>
+        /// <param name="scrollViewObj">The root ScrollView GameObject from CreateScrollView</param>
+        /// <returns>The DynamicScrollbar component</returns>
+        public static Widgets.DynamicScrollbar ConfigureAutoHideScrollbar(GameObject scrollViewObj)
+        {
+            if (scrollViewObj == null) return null;
+
+#if CPP
+            Widgets.DynamicScrollbar.RegisterType();
+#endif
+
+            var dynamicScrollbar = scrollViewObj.GetComponent<Widgets.DynamicScrollbar>();
+            if (dynamicScrollbar == null)
+            {
+                dynamicScrollbar = scrollViewObj.AddComponent<Widgets.DynamicScrollbar>();
+            }
+            return dynamicScrollbar;
         }
 
         #endregion
