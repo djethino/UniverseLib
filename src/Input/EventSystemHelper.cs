@@ -99,8 +99,9 @@ namespace UniverseLib.Input
 
         /// <summary>
         /// If the UniverseLib EventSystem is not enabled, this enables it and sets EventSystem.current to it, and stores the previous EventSystem.
+        /// Call this when opening interactive UI panels to ensure InputFields work correctly.
         /// </summary>
-        internal static void EnableEventSystem()
+        public static void EnableEventSystem()
         {
             if (!UniversalUI.EventSys)
                 return;
@@ -165,8 +166,9 @@ namespace UniverseLib.Input
 
         /// <summary>
         /// If the UniverseLib EventSystem is enabled, this disables it and sets EventSystem.current to the previous EventSystem which was enabled.
+        /// Call this when closing all interactive UI panels to restore the game's EventSystem.
         /// </summary>
-        internal static void ReleaseEventSystem()
+        public static void ReleaseEventSystem()
         {
             if (!UniversalUI.EventSys)
                 return;

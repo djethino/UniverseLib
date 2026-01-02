@@ -27,44 +27,62 @@ namespace UniverseLib.UI
         /// </summary>
         public static class Colors
         {
-            // Background colors (slate blue tint for modern look)
-            public static Color PanelBackground = new(0.11f, 0.13f, 0.17f, 0.98f);   // Main panel background
-            public static Color SlightBackground = new(0.09f, 0.11f, 0.14f, 1f);     // Slightly darker
-            public static Color DarkBackground = new(0.06f, 0.07f, 0.09f, 1f);       // Darkest elements
-            public static Color TitleBarBackground = new(0.08f, 0.09f, 0.12f, 1f);   // Title bar
+            // Background colors - EXACT from website CSS analysis
+            // Body: rgb(15, 15, 26) - dark blue-night
+            // Card: rgb(30, 41, 57) - blue-gray
+            // Border: rgb(54, 65, 83) - slate blue
+            public static Color PanelBackground = new(0.118f, 0.161f, 0.224f, 0.98f);  // Card bg rgb(30,41,57)
+
+            /// <summary>
+            /// Default background color for layout groups (VerticalGroup, HorizontalGroup, GridGroup)
+            /// when no explicit bgColor is provided. Set this early in your mod initialization.
+            /// Default: Color.clear (transparent)
+            /// </summary>
+            public static Color DefaultLayoutBackground = Color.clear;
+
+            /// <summary>
+            /// Default padding for layout groups when using DefaultLayoutBackground.
+            /// Applied only when padding == default AND bgColor == default AND DefaultLayoutBackground != clear.
+            /// Format: Vector4(left, right, top, bottom). Default: (5,5,5,5)
+            /// </summary>
+            public static Vector4 DefaultLayoutPadding = new(5, 5, 5, 5);
+
+            public static Color SlightBackground = new(0.08f, 0.10f, 0.14f, 1f);       // Darker blue-gray
+            public static Color DarkBackground = new(0.059f, 0.059f, 0.102f, 1f);      // Body bg rgb(15,15,26)
+            public static Color TitleBarBackground = new(0.08f, 0.10f, 0.14f, 1f);     // Subtle title bar
 
             // Primary accent color (purple - matches website)
             public static Color Accent = new(0.55f, 0.36f, 0.96f, 1f);               // #8b5cf6
             public static Color AccentHighlight = new(0.65f, 0.48f, 1f, 1f);         // Lighter purple
             public static Color AccentPressed = new(0.45f, 0.28f, 0.85f, 1f);        // Darker purple
 
-            // Interactive element colors
-            public static Color ButtonNormal = new(0.18f, 0.20f, 0.25f, 1f);         // Slate buttons
-            public static Color ButtonHighlight = new(0.25f, 0.28f, 0.35f, 1f);
-            public static Color ButtonPressed = new(0.14f, 0.16f, 0.20f, 1f);
+            // Interactive element colors - blue-gray tones
+            public static Color ButtonNormal = new(0.16f, 0.20f, 0.27f, 1f);         // Blue-gray buttons
+            public static Color ButtonHighlight = new(0.21f, 0.255f, 0.325f, 1f);    // Card border color
+            public static Color ButtonPressed = new(0.10f, 0.13f, 0.18f, 1f);
 
-            // Slider/Scrollbar colors
-            public static Color SliderBackground = new(0.10f, 0.12f, 0.15f, 1f);
+            // Slider/Scrollbar colors - blue-gray tones
+            public static Color SliderBackground = new(0.12f, 0.15f, 0.20f, 1f);
             public static Color SliderFill = new(0.55f, 0.36f, 0.96f, 0.8f);         // Purple fill
-            public static Color SliderHandle = new(0.55f, 0.55f, 0.65f, 1f);
+            public static Color SliderHandle = new(0.29f, 0.35f, 0.45f, 1f);         // Blue-gray handle
 
-            // Input field colors
-            public static Color InputBackground = new(0.08f, 0.09f, 0.12f, 1f);
-            public static Color InputBorder = new(0.20f, 0.22f, 0.28f, 1f);
-            public static Color PlaceholderText = new(0.45f, 0.48f, 0.55f, 1f);
+            // Input field colors - matches website input bg rgb(54,65,83)
+            public static Color InputBackground = new(0.212f, 0.255f, 0.325f, 1f);   // Slate blue
+            public static Color InputBorder = new(0.29f, 0.333f, 0.396f, 1f);        // Lighter slate
+            public static Color PlaceholderText = new(0.45f, 0.50f, 0.58f, 1f);
 
-            // Toggle colors
-            public static Color ToggleBackground = new(0.10f, 0.12f, 0.15f, 1f);
-            public static Color ToggleCheckmark = new(0.55f, 0.36f, 0.96f, 0.9f);    // Purple checkmark
+            // Toggle colors - lighter background for visibility
+            public static Color ToggleBackground = new(0.29f, 0.333f, 0.396f, 1f);   // Light slate (visible)
+            public static Color ToggleCheckmark = new(0.55f, 0.36f, 0.96f, 0.95f);   // Purple checkmark
 
             // Dropdown colors
-            public static Color DropdownBackground = new(0.10f, 0.12f, 0.15f, 0.98f);
-            public static Color DropdownItemNormal = new(0.18f, 0.20f, 0.25f, 1f);
-            public static Color DropdownItemHighlight = new(0.55f, 0.36f, 0.96f, 0.6f); // Purple highlight
+            public static Color DropdownBackground = new(0.118f, 0.161f, 0.224f, 0.98f);
+            public static Color DropdownItemNormal = new(0.16f, 0.20f, 0.27f, 1f);
+            public static Color DropdownItemHighlight = new(0.55f, 0.36f, 0.96f, 0.5f); // Purple highlight
 
             // Scroll view colors
-            public static Color ScrollViewBackground = new(0.13f, 0.15f, 0.19f, 1f);
-            public static Color ViewportBackground = new(0.09f, 0.11f, 0.14f, 1f);
+            public static Color ScrollViewBackground = new(0.08f, 0.10f, 0.14f, 1f);
+            public static Color ViewportBackground = new(0.07f, 0.09f, 0.12f, 1f);
 
             // Status colors
             public static Color Success = new(0.34f, 0.80f, 0.48f, 1f);              // Green
@@ -222,7 +240,7 @@ namespace UniverseLib.UI
         public static GameObject CreatePanel(string name, GameObject parent, out GameObject contentHolder, Color? bgColor = null)
         {
             GameObject panelObj = CreateUIObject(name, parent);
-            // Minimal border for cleaner look
+            // No border - clean modern look like website
             SetLayoutGroup<VerticalLayoutGroup>(panelObj, true, true, true, true, 0, 0, 0, 0, 0);
 
             RectTransform rect = panelObj.GetComponent<RectTransform>();
@@ -231,8 +249,8 @@ namespace UniverseLib.UI
             rect.anchoredPosition = Vector2.zero;
             rect.sizeDelta = Vector2.zero;
 
-            // Subtle border color instead of pure black
-            panelObj.AddComponent<Image>().color = Colors.DarkBackground;
+            // Very subtle outer edge (nearly invisible)
+            panelObj.AddComponent<Image>().color = new Color(0.08f, 0.10f, 0.14f, 1f);
             panelObj.AddComponent<RectMask2D>();
 
             contentHolder = CreateUIObject("Content", panelObj);
@@ -241,8 +259,8 @@ namespace UniverseLib.UI
             bgImage.type = Image.Type.Filled;
             bgImage.color = bgColor ?? Colors.PanelBackground;
 
-            // Tighter padding for modern look
-            SetLayoutGroup<VerticalLayoutGroup>(contentHolder, true, true, true, true, 2, 2, 2, 2, 2);
+            // Minimal padding (1px border effect)
+            SetLayoutGroup<VerticalLayoutGroup>(contentHolder, true, true, true, true, 1, 1, 1, 1, 1);
 
             return panelObj;
         }
@@ -256,13 +274,20 @@ namespace UniverseLib.UI
         {
             GameObject groupObj = CreateUIObject(name, parent);
 
+            // Apply default padding only when:
+            // - No explicit padding provided
+            // - No explicit bgColor provided (transparent colors count as explicit)
+            // - DefaultLayoutBackground is configured (not clear)
+            bool bgColorIsDefault = bgColor.r == 0 && bgColor.g == 0 && bgColor.b == 0 && bgColor.a == 0;
+            bool useDefaultStyle = padding == default && bgColorIsDefault && Colors.DefaultLayoutBackground.a > 0;
+            Vector4 effectivePadding = useDefaultStyle ? Colors.DefaultLayoutPadding : padding;
+            Color effectiveColor = bgColorIsDefault ? Colors.DefaultLayoutBackground : bgColor;
+
             SetLayoutGroup<VerticalLayoutGroup>(groupObj, forceWidth, forceHeight, childControlWidth, childControlHeight,
-                spacing, (int)padding.x, (int)padding.y, (int)padding.z, (int)padding.w, childAlignment);
+                spacing, (int)effectivePadding.x, (int)effectivePadding.y, (int)effectivePadding.z, (int)effectivePadding.w, childAlignment);
 
             Image image = groupObj.AddComponent<Image>();
-            image.color = bgColor == default
-                            ? new Color(0.17f, 0.17f, 0.17f)
-                            : bgColor;
+            image.color = effectiveColor;
 
             return groupObj;
         }
@@ -276,19 +301,26 @@ namespace UniverseLib.UI
         {
             GameObject groupObj = CreateUIObject(name, parent);
 
+            // Apply default padding only when:
+            // - No explicit padding provided
+            // - No explicit bgColor provided (transparent colors count as explicit)
+            // - DefaultLayoutBackground is configured (not clear)
+            bool bgColorIsDefault = bgColor.r == 0 && bgColor.g == 0 && bgColor.b == 0 && bgColor.a == 0;
+            bool useDefaultStyle = padding == default && bgColorIsDefault && Colors.DefaultLayoutBackground.a > 0;
+            Vector4 effectivePadding = useDefaultStyle ? Colors.DefaultLayoutPadding : padding;
+            Color effectiveColor = bgColorIsDefault ? Colors.DefaultLayoutBackground : bgColor;
+
             SetLayoutGroup<HorizontalLayoutGroup>(groupObj, forceExpandWidth, forceExpandHeight, childControlWidth, childControlHeight,
-                spacing, (int)padding.x, (int)padding.y, (int)padding.z, (int)padding.w, childAlignment);
+                spacing, (int)effectivePadding.x, (int)effectivePadding.y, (int)effectivePadding.z, (int)effectivePadding.w, childAlignment);
 
             Image image = groupObj.AddComponent<Image>();
-            image.color = bgColor == default
-                            ? new Color(0.17f, 0.17f, 0.17f)
-                            : bgColor;
+            image.color = effectiveColor;
 
             return groupObj;
         }
 
         /// <summary>
-        /// Create a GridLayoutGroup object with an Image component. 
+        /// Create a GridLayoutGroup object with an Image component.
         /// </summary>
         public static GameObject CreateGridGroup(GameObject parent, string name, Vector2 cellSize, Vector2 spacing, Color bgColor = default)
         {
@@ -300,10 +332,9 @@ namespace UniverseLib.UI
             gridGroup.spacing = spacing;
 
             Image image = groupObj.AddComponent<Image>();
-
             image.color = bgColor == default
-                ? new Color(0.17f, 0.17f, 0.17f)
-                : bgColor;
+                            ? Colors.DefaultLayoutBackground
+                            : bgColor;
 
             return groupObj;
         }
