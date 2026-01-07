@@ -289,7 +289,15 @@ namespace UniverseLib.Input
             if (ConfigManager.Allow_UI_Selection_Outside_UIBase || !UniversalUI.AnyUIShowing || !UniversalUI.CanvasRoot)
                 return true;
 
-            return __0 && __0.transform.root.gameObject.GetInstanceID() == UniversalUI.CanvasRoot.GetInstanceID();
+            bool allowed = __0 && __0.transform.root.gameObject.GetInstanceID() == UniversalUI.CanvasRoot.GetInstanceID();
+
+            // DEBUG: Log blocked selections to diagnose Dropdown Blocker issue
+            if (!allowed && __0 != null)
+            {
+                Universe.LogWarning($"[EventSystemHelper] Blocked selection of: '{__0.name}' (root: {__0.transform.root.name}, expected: {UniversalUI.CanvasRoot.name})");
+            }
+
+            return allowed;
         }
 
         // Force EventSystem.current to be UniverseLib's when menu is open
