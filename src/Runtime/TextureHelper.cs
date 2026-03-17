@@ -52,6 +52,102 @@ namespace UniverseLib.Runtime
         protected internal abstract Texture2D Internal_NewTexture2D(int width, int height, TextureFormat textureFormat, bool mipChain);
 
         /// <summary>
+        /// SetPixels32 with IL2CPP compatibility. On IL2CPP, converts Color32[] to Il2CppStructArray.
+        /// </summary>
+        public static void SetPixels32Safe(Texture2D texture, Color32[] colors)
+        {
+#if CPP
+            Il2Cpp.Il2CppTextureHelper.SetPixels32IL2CPP(texture, colors);
+#else
+            texture.SetPixels32(colors);
+#endif
+        }
+
+        /// <summary>
+        /// Try to create a dynamic Font from a system font name.
+        /// On IL2CPP, uses ICall to bypass method stripping.
+        /// Returns null if not available.
+        /// </summary>
+        /// <summary>
+        /// Set Font.characterInfo using IL2CPP-safe array conversion.
+        /// On Mono, sets directly. On IL2CPP, uses Il2CppStructArray.
+        /// </summary>
+        public static bool SetFontCharacterInfo(Font font, CharacterInfo[] chars)
+        {
+#if CPP
+            // On IL2CPP, managed CharacterInfo properties don't transfer correctly.
+            // We must pass raw data and build the structs in IL2CPP code.
+            return false; // Use SetFontCharacterInfoFromRaw instead
+#else
+            font.characterInfo = chars;
+            return true;
+#endif
+        }
+
+        /// <summary>
+        /// Set Font.characterInfo from raw arrays. Required on IL2CPP where CharacterInfo
+        /// struct properties don't marshal between managed and IL2CPP.
+        /// </summary>
+        public static bool SetFontCharacterInfoFromRaw(Font font, int count,
+            int[] indices, int[] advances,
+            float[] uvL, float[] uvR, float[] uvT, float[] uvB,
+            int[] minXs, int[] maxXs, int[] minYs, int[] maxYs,
+            int[] glyphWs, int[] glyphHs)
+        {
+#if CPP
+            return Il2Cpp.Il2CppTextureHelper.SetFontCharacterInfoFromRaw(font, count,
+                indices, advances, uvL, uvR, uvT, uvB, minXs, maxXs, minYs, maxYs, glyphWs, glyphHs);
+#else
+            var chars = new CharacterInfo[count];
+            for (int i = 0; i < count; i++)
+            {
+                chars[i].index = indices[i];
+                chars[i].advance = advances[i];
+                chars[i].uvBottomLeft = new Vector2(uvL[i], uvB[i]);
+                chars[i].uvBottomRight = new Vector2(uvR[i], uvB[i]);
+                chars[i].uvTopLeft = new Vector2(uvL[i], uvT[i]);
+                chars[i].uvTopRight = new Vector2(uvR[i], uvT[i]);
+                chars[i].minX = minXs[i];
+                chars[i].maxX = maxXs[i];
+                chars[i].minY = minYs[i];
+                chars[i].maxY = maxYs[i];
+                chars[i].glyphWidth = glyphWs[i];
+                chars[i].glyphHeight = glyphHs[i];
+            }
+            font.characterInfo = chars;
+            return true;
+#endif
+        }
+
+        /// <summary>
+        /// Set Font.fontNames (system font names for dynamic rendering).
+        /// On IL2CPP, converts string[] to Il2CppStringArray.
+        /// </summary>
+        public static bool SetFontNames(Font font, string[] names)
+        {
+#if CPP
+            return Il2Cpp.Il2CppTextureHelper.SetFontNames(font, names);
+#else
+            font.fontNames = names;
+            return true;
+#endif
+        }
+
+        /// <summary>
+        /// Try to create a dynamic Font. Only works on Mono.
+        /// On IL2CPP, Internal_CreateDynamicFont ICall crashes — disabled.
+        /// </summary>
+        public static Font CreateDynamicFont(string fontName, int size = 32)
+        {
+#if CPP
+            // ICall crashes on IL2CPP (native function calls back into stripped managed code)
+            return null;
+#else
+            return Font.CreateDynamicFontFromOSFont(fontName, size);
+#endif
+        }
+
+        /// <summary>
         /// Helper for calling Unity's <see cref="Graphics.Blit"/> method.
         /// </summary>
         public static void Blit(Texture tex, RenderTexture rt)
