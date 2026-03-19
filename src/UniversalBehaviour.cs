@@ -18,6 +18,7 @@ namespace UniverseLib
     internal class UniversalBehaviour : MonoBehaviour
     {
         internal static UniversalBehaviour Instance { get; private set; }
+        internal static volatile bool Quitting;
 
         internal static void Setup()
         {
@@ -34,6 +35,12 @@ namespace UniverseLib
         internal void Update()
         {
             Universe.Update();
+        }
+
+        internal void OnApplicationQuit()
+        {
+            Quitting = true;
+            StopAllCoroutines();
         }
 
 #if CPP

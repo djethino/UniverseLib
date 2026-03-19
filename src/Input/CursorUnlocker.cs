@@ -56,7 +56,7 @@ namespace UniverseLib.Input
         /// </summary>
         private static IEnumerator UnlockCoroutine()
         {
-            while (true)
+            while (!UniversalBehaviour.Quitting)
             {
                 yield return waitForEndOfFrame ??= new WaitForEndOfFrame();
                 if (UniversalUI.AnyUIShowing || !EventSystemHelper.lastEventSystem)
