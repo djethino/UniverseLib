@@ -143,7 +143,8 @@ public class ReflectionUtility
             }
             catch (Exception e)
             {
-                Universe.LogWarning($"THIS WARNING IS NOT BUG!!!! DON'T REPORT THIS!!!!!\n Can't cache type named {type.Name} Error: {e}");
+                // Silenced: TypeLoadException on stripped types (UIElements etc.) is expected on IL2CPP
+                // Universe.LogWarning($"Can't cache type {type.Name}: {e.GetType().Name}");
             }
 
             // Cache the type. Overwrite type if one exists with the full name

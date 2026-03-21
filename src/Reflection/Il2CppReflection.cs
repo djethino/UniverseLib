@@ -642,8 +642,9 @@ namespace UniverseLib
                 }
             }
             else
-                Universe.LogWarning($"Expected Unhollowed folder path does not exist: '{dir}'. " +
-                    $"If you are using the standalone release, you can specify the Unhollowed modules path when you call CreateInstance().");
+            {
+                // Silenced: empty Unhollowed path is normal when using mod loaders (BepInEx/MelonLoader handle this)
+            }
         }
 
         internal bool DoLoadModule(string fullPath)
