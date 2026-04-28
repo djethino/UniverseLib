@@ -1,4 +1,6 @@
-﻿using System;
+﻿using HarmonyLib;
+using System;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
 using UniverseLib;
@@ -11,6 +13,12 @@ namespace UniverseLib.UI.Widgets
 {
     public class TransformCell : ICell
     {
+#if MONO
+        // ILRepack-friendly access to Toggle's internal Set(bool, bool) method.
+        static readonly MethodInfo Toggle_Set_method
+            = AccessTools.Method(typeof(Toggle), "Set", new[] { typeof(bool), typeof(bool) });
+#endif
+
         public float DefaultHeight => 25f;
 
         public bool Enabled => enabled;
@@ -67,7 +75,11 @@ namespace UniverseLib.UI.Widgets
                 NameButton.ButtonText.text = name;
                 NameButton.ButtonText.color = cached.Value.gameObject.activeSelf ? Color.white : Color.grey;
 
+#if MONO
+                Toggle_Set_method?.Invoke(EnabledToggle, new object[] { cached.Value.gameObject.activeSelf, false });
+#else
                 EnabledToggle.Set(cached.Value.gameObject.activeSelf, false);
+#endif
 
                 if (!cached.Value.parent)
                     SiblingIndex.GameObject.SetActive(false);

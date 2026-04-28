@@ -1,9 +1,12 @@
 ﻿using System;
+using HarmonyLib;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Diagnostics;
+using System.Reflection;
 using UnityEngine;
+using UnityEngine.UI;
 using UniverseLib;
 using UniverseLib.UI.Widgets.ScrollView;
 using UniverseLib.Utility;
@@ -12,6 +15,12 @@ namespace UniverseLib.UI.Widgets
 {
     public class TransformTree : ICellPoolDataSource<TransformCell>
     {
+#if MONO
+        // ILRepack-friendly access to Selectable's protected internal StartColorTween(Color, bool) method.
+        static readonly MethodInfo Selectable_StartColorTween_method
+            = AccessTools.Method(typeof(Selectable), "StartColorTween", new[] { typeof(Color), typeof(bool) });
+#endif
+
         /// <summary>
         /// The method used to retrieve the list of GameObjects in this TransformTree
         /// </summary>
@@ -182,7 +191,11 @@ namespace UniverseLib.UI.Widgets
         IEnumerator HighlightCellCoroutine(TransformCell cell)
         {
             UnityEngine.UI.Button button = cell.NameButton.Component;
+#if MONO
+            Selectable_StartColorTween_method?.Invoke(button, new object[] { new Color(0.2f, 0.3f, 0.2f), false });
+#else
             button.StartColorTween(new Color(0.2f, 0.3f, 0.2f), false);
+#endif
 
             float start = Time.realtimeSinceStartup;
             while (Time.realtimeSinceStartup - start < 1.5f)

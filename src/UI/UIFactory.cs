@@ -15,6 +15,12 @@ namespace UniverseLib.UI
     /// </summary>
     public static class UIFactory
     {
+#if MONO
+        // ILRepack-friendly access to Slider's private m_HandleContainerRect field.
+        static readonly AmbiguousMemberHandler<Slider, RectTransform> m_HandleContainerRect_handler
+            = new(false, true, "m_HandleContainerRect");
+#endif
+
         internal static Vector2 largeElementSize = new(100, 30);
         internal static Vector2 smallElementSize = new(25, 25);
         internal static Color defaultTextColor = Color.white;
@@ -1122,7 +1128,11 @@ namespace UniverseLib.UI
 
             AutoSliderScrollbar autoScroller = new(hiddenScrollbar, scrollSlider, contentRect, viewportRect);
 
+#if MONO
+            GameObject sliderContainer = m_HandleContainerRect_handler.GetValue(autoScroller.Slider).gameObject;
+#else
             GameObject sliderContainer = autoScroller.Slider.m_HandleContainerRect.gameObject;
+#endif
             SetLayoutElement(sliderContainer, minWidth: 25, flexibleWidth: 0, flexibleHeight: 9999);
             //sliderContainer.AddComponent<Mask>().showMaskGraphic = false;
 

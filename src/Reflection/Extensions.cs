@@ -1,14 +1,25 @@
-﻿using System;
+﻿using HarmonyLib;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using UniverseLib.Runtime;
 using UniverseLib.Utility;
 
 namespace UniverseLib;
 
 public static class ReflectionExtensions
 {
+#if MONO
+    // ILRepack-friendly access to UnityEngine.Object's private m_CachedPtr field.
+    // Uses AccessTools.FieldRefAccess (DynamicMethod with skipVisibility) — direct IL access,
+    // no boxing of IntPtr, ~100x faster than FieldInfo.GetValue. Critical because
+    // ReferenceEqual is called frequently by UniverseLib for object equality checks.
+    static readonly AccessTools.FieldRef<UnityEngine.Object, IntPtr> m_CachedPtr_ref
+        = AccessTools.FieldRefAccess<UnityEngine.Object, IntPtr>("m_CachedPtr");
+#endif
+
     /// <summary>
     /// Get the true underlying Type of the provided object.
     /// </summary>
@@ -81,8 +92,13 @@ public static class ReflectionExtensions
 
         if (objA is UnityEngine.Object unityA && objB is UnityEngine.Object unityB)
         {
+#if MONO
+            if (unityA && unityB && m_CachedPtr_ref(unityA) == m_CachedPtr_ref(unityB))
+                return true;
+#else
             if (unityA && unityB && unityA.m_CachedPtr == unityB.m_CachedPtr)
                 return true;
+#endif
         }
 
 #if CPP

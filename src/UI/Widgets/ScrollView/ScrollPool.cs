@@ -5,7 +5,10 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
+using HarmonyLib;
+using System;
 using UniverseLib.Input;
+using UniverseLib.Runtime;
 using UniverseLib.UI.Models;
 using UniverseLib.UI.ObjectPool;
 using UniverseLib.UI.Panels;
@@ -23,6 +26,27 @@ namespace UniverseLib.UI.Widgets.ScrollView
     /// </summary>
     public class ScrollPool<T> : UIBehaviourModel, IEnumerable<CellInfo> where T : ICell
     {
+#if MONO
+        // ILRepack-friendly access using AccessTools.FieldRefAccess / MethodDelegate.
+        // These use DynamicMethod with skipVisibility=true — fast as direct IL access AND
+        // bypass visibility checks. Critical for hot scroll paths where Vector2 fields would
+        // otherwise be boxed by FieldInfo.GetValue, causing GC pressure → microfreezes.
+        static readonly AccessTools.FieldRef<ScrollRect, Vector2> m_ContentStartPosition_ref
+            = AccessTools.FieldRefAccess<ScrollRect, Vector2>("m_ContentStartPosition");
+        static readonly AccessTools.FieldRef<ScrollRect, Vector2> m_PrevPosition_ref
+            = AccessTools.FieldRefAccess<ScrollRect, Vector2>("m_PrevPosition");
+        static readonly AccessTools.FieldRef<Slider, RectTransform> m_HandleContainerRect_ref
+            = AccessTools.FieldRefAccess<Slider, RectTransform>("m_HandleContainerRect");
+
+        static readonly Action<ScrollRect> ScrollRect_UpdatePrevData
+            = AccessTools.MethodDelegate<Action<ScrollRect>>(
+                AccessTools.Method(typeof(ScrollRect), "UpdatePrevData"));
+
+        static readonly Action<Slider, float, bool> Slider_Set
+            = AccessTools.MethodDelegate<Action<Slider, float, bool>>(
+                AccessTools.Method(typeof(Slider), "Set", new[] { typeof(float), typeof(bool) }));
+#endif
+
         public ScrollPool(ScrollRect scrollRect)
         {
             this.ScrollRect = scrollRect;
@@ -448,7 +472,11 @@ namespace UniverseLib.UI.Widgets.ScrollView
                 LayoutRebuilder.ForceRebuildLayoutImmediate(Content);
 
             SetScrollBounds();
+#if MONO
+            ScrollRect_UpdatePrevData(ScrollRect);
+#else
             ScrollRect.UpdatePrevData();
+#endif
         }
 
         private void RefreshCellHeightsFast()
@@ -496,8 +524,13 @@ namespace UniverseLib.UI.Widgets.ScrollView
             }
 
             Vector2 vector = new(0, adjust);
+#if MONO
+            m_ContentStartPosition_ref(ScrollRect) += vector;
+            m_PrevPosition_ref(ScrollRect) += vector;
+#else
             ScrollRect.m_ContentStartPosition += vector;
             ScrollRect.m_PrevPosition += vector;
+#endif
 
             prevAnchoredPos = ScrollRect.content.anchoredPosition;
 
@@ -673,7 +706,11 @@ namespace UniverseLib.UI.Widgets.ScrollView
             CheckRecycleViewBounds(true);
 
             SetScrollBounds();
+#if MONO
+            ScrollRect_UpdatePrevData(ScrollRect);
+#else
             ScrollRect.UpdatePrevData();
+#endif
 
             UpdateSliderHandle();
         }
@@ -690,7 +727,11 @@ namespace UniverseLib.UI.Widgets.ScrollView
             handleHeight = Math.Max(15f, handleHeight);
 
             // resize the handle container area for the size of the handle (bigger handle = smaller container)
+#if MONO
+            RectTransform container = m_HandleContainerRect_ref(slider);
+#else
             RectTransform container = slider.m_HandleContainerRect;
+#endif
             container.offsetMax = new Vector2(container.offsetMax.x, -(handleHeight * 0.5f));
             container.offsetMin = new Vector2(container.offsetMin.x, handleHeight * 0.5f);
 
@@ -716,7 +757,11 @@ namespace UniverseLib.UI.Widgets.ScrollView
                     val = 0f;
             }
 
+#if MONO
+            Slider_Set(slider, val, false);
+#else
             slider.Set(val, false);
+#endif
         }
 
         /// <summary>Use <see cref="UIFactory.CreateScrollPool"/></summary>

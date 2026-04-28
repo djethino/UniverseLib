@@ -1,4 +1,5 @@
 ﻿using System;
+using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -6,6 +7,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 using UniverseLib;
+using UniverseLib.Runtime;
 using UniverseLib.UI;
 using UniverseLib.UI.Models;
 
@@ -16,6 +18,17 @@ namespace UniverseLib.UI.Widgets
     /// </summary>
     public class AutoSliderScrollbar : UIBehaviourModel
     {
+#if MONO
+        // Fast IL-level access via DynamicMethod (skipVisibility) — no boxing, no reflection
+        // overhead, bypasses post-merge visibility checks. Hot paths: Update / scroll callbacks.
+        static readonly AccessTools.FieldRef<Slider, RectTransform> m_HandleContainerRect_ref
+            = AccessTools.FieldRefAccess<Slider, RectTransform>("m_HandleContainerRect");
+
+        static readonly Action<Slider, float, bool> Slider_Set
+            = AccessTools.MethodDelegate<Action<Slider, float, bool>>(
+                AccessTools.Method(typeof(Slider), "Set", new[] { typeof(float), typeof(bool) }));
+#endif
+
         public override GameObject UIRoot
         {
             get
@@ -42,7 +55,11 @@ namespace UniverseLib.UI.Widgets
             this.Slider.onValueChanged.AddListener(this.OnSliderValueChanged);
 
             //this.RefreshVisibility();
+#if MONO
+            Slider_Set(this.Slider, 0f, false);
+#else
             this.Slider.Set(0f, false);
+#endif
 
             UpdateSliderHandle();
         }
@@ -96,7 +113,11 @@ namespace UniverseLib.UI.Widgets
             handleHeight = Math.Max(15f, handleHeight);
 
             // resize the handle container area for the size of the handle (bigger handle = smaller container)
+#if MONO
+            RectTransform container = m_HandleContainerRect_ref(Slider);
+#else
             RectTransform container = Slider.m_HandleContainerRect;
+#endif
             container.offsetMax = new Vector2(container.offsetMax.x, -(handleHeight * 0.5f));
             container.offsetMin = new Vector2(container.offsetMin.x, handleHeight * 0.5f);
 
@@ -117,7 +138,11 @@ namespace UniverseLib.UI.Widgets
         {
             value = 1f - value;
             if (this.Slider.value != value)
+#if MONO
+                Slider_Set(this.Slider, value, false);
+#else
                 this.Slider.Set(value, false);
+#endif
             //OnValueChanged?.Invoke(value);
         }
 

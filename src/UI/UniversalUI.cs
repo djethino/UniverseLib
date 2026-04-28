@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using UniverseLib.Input;
+using UniverseLib.Runtime;
 using UniverseLib.UI.Models;
 using UniverseLib.UI.Panels;
 using UniverseLib.Utility;
@@ -17,6 +18,12 @@ namespace UniverseLib.UI;
 /// <summary>Handles all <see cref="UIBase"/> UIs on the UniverseLib UI canvas.</summary>
 public static class UniversalUI
 {
+#if MONO
+    // ILRepack-friendly access to AssetBundle's private m_CachedPtr field.
+    static readonly AmbiguousMemberHandler<AssetBundle, IntPtr> m_CachedPtr_handler
+        = new(false, true, "m_CachedPtr");
+#endif
+
     internal static readonly Dictionary<string, UIBase> registeredUIs = new();
     internal static readonly List<UIBase> uiBases = new();
 
@@ -322,8 +329,13 @@ public static class UniversalUI
             AssetBundle[] bundles = method.Invoke(null, ArgumentUtility.EmptyArgs) as AssetBundle[];
             foreach (AssetBundle obj in bundles)
             {
+#if MONO
+                if (m_CachedPtr_handler.GetValue(obj) == m_CachedPtr_handler.GetValue(UIBundle))
+                    continue;
+#else
                 if (obj.m_CachedPtr == UIBundle.m_CachedPtr)
                     continue;
+#endif
 
                 obj.Unload(unloadAllObjects);
             }

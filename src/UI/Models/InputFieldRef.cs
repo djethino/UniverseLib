@@ -1,6 +1,8 @@
-﻿using System;
+﻿using HarmonyLib;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -12,6 +14,12 @@ namespace UniverseLib.UI.Models
     /// </summary>
     public class InputFieldRef : UIModel
     {
+#if MONO
+        // ILRepack-friendly access to InputField's internal cachedInputTextGenerator property.
+        static readonly MethodInfo InputField_get_cachedInputTextGenerator
+            = AccessTools.PropertyGetter(typeof(InputField), "cachedInputTextGenerator");
+#endif
+
         // Static
 
         internal static readonly HashSet<InputFieldRef> inputsPendingUpdate = new();
@@ -72,7 +80,11 @@ namespace UniverseLib.UI.Models
         /// <summary>
         /// A reference to the InputField's cachedInputTextGenerator.
         /// </summary>
+#if MONO
+        public TextGenerator TextGenerator => (TextGenerator)InputField_get_cachedInputTextGenerator?.Invoke(Component, null);
+#else
         public TextGenerator TextGenerator => Component.cachedInputTextGenerator;
+#endif
         
         /// <summary>
         /// Returns true if the InputField's vertex count has reached the <see cref="UniversalUI.MAX_TEXT_VERTS"/> limit.

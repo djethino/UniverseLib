@@ -162,6 +162,12 @@ namespace UniverseLib.Input
 #if MONO
         static readonly AmbiguousMemberHandler<EventSystem, List<EventSystem>> m_EventSystems_handler
             = new(true, true, "m_EventSystems", "m_eventSystems");
+
+        // ILRepack-friendly: direct stfld on a private Unity field fails after merge
+        // (calling-assembly identity changes from UniverseLib.Mono to the merged adapter
+        // and Mono's runtime enforces the visibility check). Reflection bypasses it.
+        static readonly AmbiguousMemberHandler<EventSystem, BaseInputModule> m_CurrentInputModule_handler
+            = new(true, true, "m_CurrentInputModule");
 #endif
 
         /// <summary>
@@ -199,7 +205,11 @@ namespace UniverseLib.Input
                 if (lastInputModule)
                 {
                     lastInputModule.ActivateModule();
+#if MONO
+                    m_CurrentInputModule_handler.SetValue(lastEventSystem, lastInputModule);
+#else
                     lastEventSystem.m_CurrentInputModule = lastInputModule;
+#endif
                 }
 
 #if MONO
@@ -231,7 +241,11 @@ namespace UniverseLib.Input
 
         internal static void ActivateUIModule()
         {
+#if MONO
+            m_CurrentInputModule_handler.SetValue(UniversalUI.EventSys, UIInput);
+#else
             UniversalUI.EventSys.m_CurrentInputModule = UIInput;
+#endif
             InputManager.inputHandler.ActivateModule();
         }
 

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UniverseLib.Runtime;
 using UniverseLib.UI;
 using UniverseLib.Utility;
 
@@ -22,6 +23,12 @@ namespace UniverseLib.Input;
 
 public class InputSystem : IHandleInput
 {
+#if MONO
+    // ILRepack-friendly access to BaseInputModule's private m_EventSystem field.
+    static readonly AmbiguousMemberHandler<BaseInputModule, EventSystem> m_EventSystem_handler
+        = new(true, true, "m_EventSystem");
+#endif
+
 #region Reflection cache
 
     // typeof(InputSystem.Keyboard)
@@ -433,7 +440,11 @@ public class InputSystem : IHandleInput
         try
         {
             BaseInputModule newInput = (BaseInputModule)newInputModule.TryCast(TInputSystemUIInputModule);
+#if MONO
+            m_EventSystem_handler.SetValue(newInput, UniversalUI.EventSys);
+#else
             newInput.m_EventSystem = UniversalUI.EventSys;
+#endif
             newInput.ActivateModule();
             m_UI_Enable?.Invoke(UIActionMap, ArgumentUtility.EmptyArgs);
 

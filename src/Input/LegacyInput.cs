@@ -2,6 +2,7 @@
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UniverseLib.Runtime;
 using UniverseLib.UI;
 using UniverseLib.Utility;
 
@@ -9,6 +10,12 @@ namespace UniverseLib.Input
 {
     public class LegacyInput : IHandleInput
     {
+#if MONO
+        // ILRepack-friendly access to BaseInputModule's private m_EventSystem field.
+        static readonly AmbiguousMemberHandler<BaseInputModule, EventSystem> m_EventSystem_handler
+            = new(true, true, "m_EventSystem");
+#endif
+
         public LegacyInput()
         {
             p_mousePosition = TInput.GetProperty("mousePosition");
@@ -56,7 +63,11 @@ namespace UniverseLib.Input
         public void AddUIInputModule()
         {
             inputModule = UniversalUI.CanvasRoot.gameObject.AddComponent<StandaloneInputModule>();
+#if MONO
+            m_EventSystem_handler.SetValue(inputModule, UniversalUI.EventSys);
+#else
             inputModule.m_EventSystem = UniversalUI.EventSys;
+#endif
         }
 
         public void ActivateModule()
