@@ -739,7 +739,7 @@ namespace UniverseLib.UI
             templateImage.color = Colors.DarkBackground;
 
             ScrollRect scrollRect = templateObj.AddComponent<ScrollRect>();
-            scrollRect.scrollSensitivity = 35;
+            scrollRect.scrollSensitivity = 20;
             scrollRect.content = contentObj.GetComponent<RectTransform>();
             scrollRect.viewport = viewportObj.GetComponent<RectTransform>();
             scrollRect.horizontal = false;
@@ -1038,7 +1038,7 @@ namespace UniverseLib.UI
             scrollRect.vertical = true;
             scrollRect.verticalScrollbar = hiddenScrollbar;
             scrollRect.movementType = ScrollRect.MovementType.Clamped;
-            scrollRect.scrollSensitivity = 35;
+            scrollRect.scrollSensitivity = 20;
             scrollRect.horizontalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
             scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -1148,7 +1148,7 @@ namespace UniverseLib.UI
             scrollRect.vertical = true;
             scrollRect.verticalScrollbar = hiddenScrollbar;
             scrollRect.movementType = ScrollRect.MovementType.Clamped;
-            scrollRect.scrollSensitivity = 35;
+            scrollRect.scrollSensitivity = 20;
             scrollRect.horizontalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
             scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -1212,6 +1212,31 @@ namespace UniverseLib.UI
                 dynamicScrollbar = scrollViewObj.AddComponent<Widgets.DynamicScrollbar>();
             }
             return dynamicScrollbar;
+        }
+
+        /// <summary>
+        /// Make a ScrollRect's content GameObject keep at least the viewport height.
+        /// Lets flexibleHeight children expand vertically when there is room, while still
+        /// allowing the content to grow past the viewport for the scrollbar to engage.
+        /// Requires the content to use a ContentSizeFitter in PreferredSize vertical mode
+        /// (the standard setup from <see cref="CreateScrollView"/>).
+        /// </summary>
+        /// <param name="scrollContentObj">The "Content" child of a ScrollRect (CreateScrollView's out content parameter)</param>
+        /// <returns>The FillViewportHeight component</returns>
+        public static Widgets.FillViewportHeight AttachFillViewportHeight(GameObject scrollContentObj)
+        {
+            if (scrollContentObj == null) return null;
+
+#if CPP
+            Widgets.FillViewportHeight.RegisterType();
+#endif
+
+            var component = scrollContentObj.GetComponent<Widgets.FillViewportHeight>();
+            if (component == null)
+            {
+                component = scrollContentObj.AddComponent<Widgets.FillViewportHeight>();
+            }
+            return component;
         }
 
         #endregion
