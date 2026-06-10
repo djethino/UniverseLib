@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,6 +6,14 @@ using System.Reflection;
 using System.Text;
 using UniverseLib.Runtime;
 using UniverseLib.Utility;
+#if CPP
+#if INTEROP
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
+#else
+using UnhollowerBaseLib;
+#endif
+#endif
 
 namespace UniverseLib;
 
@@ -103,8 +111,10 @@ public static class ReflectionExtensions
 
 #if CPP
         if (objA is Il2CppSystem.Object cppA && objB is Il2CppSystem.Object cppB
-            && cppA.Pointer == cppB.Pointer)
-            return true;
+            && cppA.ToIl2CppPointer() == cppB.ToIl2CppPointer())
+        {
+                return true;
+        }
 #endif
 
         return false;
@@ -116,10 +126,14 @@ public static class ReflectionExtensions
     public static string ReflectionExToString(this Exception e, bool innerMost = true)
     {
         if (e == null)
+        {
             return "The exception was null.";
+        }
 
         if (innerMost)
+        {
             e = e.GetInnerMostException();
+        }
 
         return $"{e.GetType()}: {e.Message}";
     }
@@ -134,14 +148,37 @@ public static class ReflectionExtensions
         while (e != null)
         {
             if (e.InnerException == null)
+            {
                 break;
+            }
 #if CPP
             if (e.InnerException is System.Runtime.CompilerServices.RuntimeWrappedException)
+            {
                 break;
+            }
 #endif
             e = e.InnerException;
         }
 
         return e;
     }
+
+#if CPP
+    /// <summary>
+    /// Returns the Pointer to any given Il2Cpp Object.
+    /// </summary>
+    internal static IntPtr ToIl2CppPointer<T>(this T obj)
+        where T : Il2CppObjectBase
+    {
+        // Get Pointer from Unhollower/Il2CppInterop instead of .Pointer
+        // This ensures greater compatibility with any variation in behavior
+        return IL2CPP.Il2CppObjectBaseToPtr(obj);
+    }
+
+    // Il2CppInterop changed parameters from uint to nint
+    // We call IL2CPP.il2cpp_gchandle_get_target using Reflection to automatically handle value conversion
+    private static MethodInfo _gcHandleGetTarget = typeof(IL2CPP).GetMethod(nameof(IL2CPP.il2cpp_gchandle_get_target), BindingFlags.Public | BindingFlags.Static);
+    internal static IntPtr GetTargetPtr(this IntPtr gcHandle)
+        => (IntPtr)_gcHandleGetTarget.Invoke(null, [gcHandle]);
+#endif
 }

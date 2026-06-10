@@ -66,7 +66,9 @@ namespace UniverseLib.Runtime.Il2Cpp
             raycaster.Raycast(data, il2cppList);
 
             if (il2cppList.Count > 0)
+            {
                 list.AddRange(il2cppList.ToArray());
+            }
         }
 
         /// <inheritdoc/>
@@ -100,11 +102,15 @@ namespace UniverseLib.Runtime.Il2Cpp
         protected internal override GameObject[] Internal_GetRootGameObjects(Scene scene)
         {
             if (!scene.isLoaded || scene.handle == -1)
-                return new GameObject[0];
+            {
+                return [];
+            }
 
             int count = GetRootCount(scene.handle);
             if (count < 1)
-                return new GameObject[0];
+            {
+                return [];
+            }
 
             Il2CppSystem.Collections.Generic.List<GameObject> list = new(count);
             ICallManager.GetICall<d_GetRootGameObjects>("UnityEngine.SceneManagement.Scene::GetRootGameObjectsInternal")
@@ -129,10 +135,12 @@ namespace UniverseLib.Runtime.Il2Cpp
         {
             try
             {
-                AccessTools.Property(typeof(Selectable), "m_Colors")
+                AccessTools
+                    .Property(typeof(Selectable), "m_Colors")
                     .SetValue(selectable, colorBlock, null);
 
-                AccessTools.Method(typeof(Selectable), "OnSetProperty")
+                AccessTools
+                    .Method(typeof(Selectable), "OnSetProperty")
                     .Invoke(selectable, ArgumentUtility.EmptyArgs);
             }
             catch (Exception ex)
@@ -150,16 +158,24 @@ namespace UniverseLib.Runtime.Il2Cpp
             object boxedColors = colors;
 
             if (normal != null)
+            {
                 normalColor.SetValue(boxedColors, (Color)normal);
+            }
 
             if (highlighted != null)
+            {
                 highlightedColor.SetValue(boxedColors, (Color)highlighted);
+            }
 
             if (pressed != null)
+            {
                 pressedColor.SetValue(boxedColors, (Color)pressed);
+            }
 
             if (disabled != null)
+            {
                 disabledColor.SetValue(boxedColors, (Color)disabled);
+            }
 
             SetColorBlock(selectable, (ColorBlock)boxedColors);
         }

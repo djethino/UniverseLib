@@ -1,4 +1,4 @@
-﻿#if CPP
+#if CPP
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -10,68 +10,119 @@ using Il2CppInterop.Runtime;
 using UnhollowerBaseLib;
 #endif
 
-namespace UniverseLib.Runtime.Il2Cpp
+#nullable enable
+
+namespace UniverseLib.Runtime.Il2Cpp;
+
+/// <summary>
+/// Helper class for using Unity ICalls (internal calls).
+/// </summary>
+public static class ICallManager
 {
+    // cache used by GetICall
+    private static readonly Dictionary<string, Delegate> iCallCache = new();
+    // cache used by GetICallUnreliable
+    private static readonly Dictionary<string, Delegate> unreliableCache = new();
+
+
     /// <summary>
-    /// Helper class for using Unity ICalls (internal calls).
+    /// Helper to get and cache an iCall by providing the signature (eg. "UnityEngine.Resources::FindObjectsOfTypeAll").
+    /// Fixed the issue where the iCall signature parsing failed for U6000.
     /// </summary>
-    public static class ICallManager
+    /// <typeparam name="T">The Type of Delegate to provide for the iCall.</typeparam>
+    /// <param name="signature">The signature of the iCall you want to get.</param>
+    /// <returns>The <typeparamref name="T"/> delegate if successful.</returns>
+    /// <exception cref="MissingMethodException" />
+    public static bool TryGetICall<T>(string signature, out T? iCall) where T : Delegate
     {
-        // cache used by GetICall
-        private static readonly Dictionary<string, Delegate> iCallCache = new();
-        // cache used by GetICallUnreliable
-        private static readonly Dictionary<string, Delegate> unreliableCache = new();
+        iCall = GetICall<T>(signature);
+        return iCall != null;
+    }
 
-        /// <summary>
-        /// Helper to get and cache an iCall by providing the signature (eg. "UnityEngine.Resources::FindObjectsOfTypeAll").
-        /// </summary>
-        /// <typeparam name="T">The Type of Delegate to provide for the iCall.</typeparam>
-        /// <param name="signature">The signature of the iCall you want to get.</param>
-        /// <returns>The <typeparamref name="T"/> delegate if successful.</returns>
-        /// <exception cref="MissingMethodException" />
-        public static T GetICall<T>(string signature) where T : Delegate
+
+    /// <summary>
+    /// Helper to get and cache an iCall by providing the signature (eg. "UnityEngine.Resources::FindObjectsOfTypeAll").
+    /// Fixed the issue where the iCall signature parsing failed for U6000.
+    /// </summary>
+    /// <typeparam name="T">The Type of Delegate to provide for the iCall.</typeparam>
+    /// <param name="signature">The signature of the iCall you want to get.</param>
+    /// <returns>The <typeparamref name="T"/> delegate if successful.</returns>
+    /// <exception cref="MissingMethodException" />
+    public static T? GetICall<T>(string signature) where T : Delegate
+    {
+        if (iCallCache.TryGetValue(signature, out var sig))
         {
-            if (iCallCache.ContainsKey(signature))
-                return (T)iCallCache[signature];
-
-            IntPtr ptr = IL2CPP.il2cpp_resolve_icall(signature);
-
-            if (ptr == IntPtr.Zero)
-                throw new MissingMethodException($"Could not find any iCall with the signature '{signature}'!");
-
-            Delegate iCall = Marshal.GetDelegateForFunctionPointer(ptr, typeof(T));
-            iCallCache.Add(signature, iCall);
-
-            return (T)iCall;
+            return (T)sig;
+        }
+        // In Unity 6000, most iCall signatures have been renamed from xxx to xxx_Injected.
+        if (!(
+                TryResolveICall(signature, out var ptr) ||
+                TryResolveICall($"{signature}_Injected", out ptr)
+            ))
+        {
+            Universe.LogWarning($"Could not find any iCall with the signature '{signature}'!");
+            return null;
         }
 
-        /// <summary>
-        /// Get an iCall which may be one of multiple different signatures (ie, the name changed in different Unity versions).
-        /// Each possible signature must have the same Delegate type, it can only vary by name.
-        /// </summary>
-        public static T GetICallUnreliable<T>(params string[] possibleSignatures) where T : Delegate
+        Delegate iCall = Marshal.GetDelegateForFunctionPointer(ptr, typeof(T));
+        iCallCache.Add(signature, iCall);
+
+        return (T)iCall;
+    }
+
+    /// <summary>
+    /// Helper to get and cache an iCall by providing the signature (eg. "UnityEngine.Resources::FindObjectsOfTypeAll").
+    /// Fixed the issue where the iCall signature parsing failed for U6000.
+    /// </summary>
+    /// <typeparam name="T">The Type of Delegate to provide for the iCall.</typeparam>
+    /// <param name="possibleSignatures">The possible signatures of the iCall you want to get.</param>
+    /// <returns>The <typeparamref name="T"/> delegate if successful.</returns>
+    /// <exception cref="MissingMethodException" />
+    public static bool TryGetICallUnreliable<T>(out T? iCall, params string[] possibleSignatures) where T : Delegate
+    {
+        iCall = GetICallUnreliable<T>(possibleSignatures);
+        return iCall != null;
+    }
+
+    /// <summary>
+    /// Get an iCall which may be one of multiple different signatures (ie, the name changed in different Unity versions).
+    /// Each possible signature must have the same Delegate type, it can only vary by name.
+    /// Fixed the issue where the iCall signature parsing failed for U6000.
+    /// </summary>
+    public static T? GetICallUnreliable<T>(params string[] possibleSignatures) where T : Delegate
+    {
+        // use the first possible signature as the 'key'.
+        string key = possibleSignatures.First();
+
+        if (unreliableCache.TryGetValue(key, out var signature))
         {
-            // use the first possible signature as the 'key'.
-            string key = possibleSignatures.First();
+            return (T)signature;
+        }
 
-            if (unreliableCache.ContainsKey(key))
-                return (T)unreliableCache[key];
+        var loopSig = new List<string>(possibleSignatures);
+        // In Unity 6000, most iCall signatures have been renamed from xxx to xxx_Injected.
+        loopSig.Concat(possibleSignatures.Select(s => $"{s}_Injected"));
 
-            T iCall;
-            IntPtr ptr;
-            foreach (string sig in possibleSignatures)
+        foreach (string sig in loopSig)
+        {
+            if (TryResolveICall(sig, out var ptr))
             {
-                ptr = IL2CPP.il2cpp_resolve_icall(sig);
-                if (ptr != IntPtr.Zero)
-                {
-                    iCall = (T)Marshal.GetDelegateForFunctionPointer(ptr, typeof(T));
-                    unreliableCache.Add(key, iCall);
-                    return iCall;
-                }
+                var iCall = (T)Marshal.GetDelegateForFunctionPointer(ptr, typeof(T));
+                unreliableCache.Add(key, iCall);
+                return iCall;
             }
-
-            throw new MissingMethodException($"Could not find any iCall from list of provided signatures starting with '{key}'!");
         }
+
+        Universe.LogWarning($"Could not find any iCall from list of provided signatures starting with '{key}'!");
+        return null;
+    }
+    /// <summary>
+    /// Use out parameter modifier, redundant value retrieval can be avoided.
+    /// </summary>
+    private static bool TryResolveICall(string signature, out IntPtr ptr)
+    {
+        ptr = IL2CPP.il2cpp_resolve_icall(signature);
+        return ptr != IntPtr.Zero;
     }
 }
 #endif
