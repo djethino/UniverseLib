@@ -108,7 +108,7 @@ public class Il2CppManagedEnumerator : Object
         System.Reflection.FieldInfo classField = 
             typeof(Il2CppClassPointerStore<>)
             .MakeGenericType(t)
-            .GetField(nameof(Il2CppClassPointerStore<>.NativeClassPtr));
+            .GetField("NativeClassPtr"); // was nameof(Il2CppClassPointerStore<>.NativeClassPtr) — C#14 preview syntax, literal is equivalent
         il.Emit(OpCodes.Ldsfld, classField);
         il.Emit(OpCodes.Ldarg_0);
         il.Emit(OpCodes.Unbox_Any, t);
