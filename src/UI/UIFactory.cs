@@ -77,8 +77,9 @@ namespace UniverseLib.UI
             public static Color InputBorder = new(0.29f, 0.333f, 0.396f, 1f);        // Lighter slate
             public static Color PlaceholderText = new(0.45f, 0.50f, 0.58f, 1f);
 
-            // Toggle colors - lighter background for visibility
-            public static Color ToggleBackground = new(0.29f, 0.333f, 0.396f, 1f);   // Light slate (visible)
+            // Toggle colors - unchecked box must stand out from panel/card backgrounds
+            // (rgb(30,41,57) card): previous 0.29-slate was too close to the background
+            public static Color ToggleBackground = new(0.42f, 0.46f, 0.54f, 1f);      // Clearly visible slate
             public static Color ToggleCheckmark = new(0.55f, 0.36f, 0.96f, 0.95f);   // Purple checkmark
 
             // Dropdown colors
@@ -1171,6 +1172,25 @@ namespace UniverseLib.UI
         /// <param name="normalColor">Color when not hovered</param>
         /// <param name="hoverColor">Color when hovered</param>
         /// <returns>The HoverEffect component, or null if no Image found</returns>
+        /// <summary>
+        /// Add a hover reporter to a UI element: enter/exit are published on
+        /// HoverCallback.PointerEntered/PointerExited with the GameObject's instance ID.
+        /// Works on both Mono and IL2CPP. The element needs a raycastable Graphic.
+        /// </summary>
+        public static Widgets.HoverCallback AddHoverCallback(GameObject gameObject)
+        {
+            if (gameObject == null) return null;
+
+#if CPP
+            Widgets.HoverCallback.RegisterType();
+#endif
+
+            var callback = gameObject.GetComponent<Widgets.HoverCallback>();
+            if (callback == null)
+                callback = gameObject.AddComponent<Widgets.HoverCallback>();
+            return callback;
+        }
+
         public static Widgets.HoverEffect AddHoverEffect(GameObject gameObject, Color normalColor, Color hoverColor)
         {
             if (gameObject == null) return null;
