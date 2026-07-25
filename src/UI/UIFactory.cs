@@ -1186,25 +1186,6 @@ namespace UniverseLib.UI
         /// <param name="normalColor">Color when not hovered</param>
         /// <param name="hoverColor">Color when hovered</param>
         /// <returns>The HoverEffect component, or null if no Image found</returns>
-        /// <summary>
-        /// Add a hover reporter to a UI element: enter/exit are published on
-        /// HoverCallback.PointerEntered/PointerExited with the GameObject's instance ID.
-        /// Works on both Mono and IL2CPP. The element needs a raycastable Graphic.
-        /// </summary>
-        public static Widgets.HoverCallback AddHoverCallback(GameObject gameObject)
-        {
-            if (gameObject == null) return null;
-
-#if CPP
-            Widgets.HoverCallback.RegisterType();
-#endif
-
-            var callback = gameObject.GetComponent<Widgets.HoverCallback>();
-            if (callback == null)
-                callback = gameObject.AddComponent<Widgets.HoverCallback>();
-            return callback;
-        }
-
         public static Widgets.HoverEffect AddHoverEffect(GameObject gameObject, Color normalColor, Color hoverColor)
         {
             if (gameObject == null) return null;
