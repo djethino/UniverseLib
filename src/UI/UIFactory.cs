@@ -81,6 +81,7 @@ namespace UniverseLib.UI
             // (rgb(30,41,57) card): previous 0.29-slate was too close to the background
             public static Color ToggleBackground = new(0.42f, 0.46f, 0.54f, 1f);      // Clearly visible slate
             public static Color ToggleCheckmark = new(0.55f, 0.36f, 0.96f, 0.95f);   // Purple checkmark
+            public static Color ToggleBorder = new(0.62f, 0.67f, 0.78f, 0.9f);       // Light edge so the box reads on any bg
 
             // Dropdown colors
             public static Color DropdownBackground = new(0.118f, 0.161f, 0.224f, 0.98f);
@@ -130,6 +131,10 @@ namespace UniverseLib.UI
             text.color = defaultTextColor;
             text.font = UniversalUI.DefaultFont;
             text.fontSize = 14;
+            // Overflow instead of Unity's default Truncate: in a height-constrained row, Truncate culls
+            // the WHOLE line when the text is a hair taller than its box (varies with the game's default
+            // font metrics) — labels silently vanished. Overflow always renders the text.
+            text.verticalOverflow = VerticalWrapMode.Overflow;
         }
 
         internal static void SetDefaultSelectableValues(Selectable selectable)
@@ -389,7 +394,10 @@ namespace UniverseLib.UI
         /// <returns>A ButtonRef wrapper for your Button component.</returns>
         public static ButtonRef CreateButton(GameObject parent, string name, string text, Color? normalColor = null)
         {
-            normalColor ??= new Color(0.25f, 0.25f, 0.25f);
+            // Default to the themeable palette (driven from the plugin) instead of a hardcoded gray, so a
+            // bare CreateButton is already on-theme. Image.color stays white and the ColorBlock tints it,
+            // so the button renders at the FULL normalColor.
+            normalColor ??= Colors.ButtonNormal;
             ButtonRef buttonRef = CreateButton(parent, name, text, default(ColorBlock));
             RuntimeHelper.Instance.Internal_SetColorBlock(buttonRef.Component, normalColor, normalColor * 1.2f, normalColor * 0.7f);
             return buttonRef;
@@ -571,6 +579,12 @@ namespace UniverseLib.UI
             GameObject checkBgObj = CreateUIObject("Background", toggleObj);
             Image bgImage = checkBgObj.AddComponent<Image>();
             bgImage.color = bgColor == default ? Colors.ToggleBackground : bgColor;
+
+            // Subtle light border so the (small) box reads on ANY container background — a fill alone can't
+            // win on both light and dark cards.
+            var boxOutline = checkBgObj.AddComponent<Outline>();
+            boxOutline.effectColor = Colors.ToggleBorder;
+            boxOutline.effectDistance = new Vector2(1.4f, -1.4f);
 
             SetLayoutGroup<HorizontalLayoutGroup>(checkBgObj, true, true, true, true, 0, 2, 2, 2, 2);
             SetLayoutElement(checkBgObj, minWidth: checkWidth, flexibleWidth: 0, minHeight: checkHeight, flexibleHeight: 0);
