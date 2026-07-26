@@ -45,8 +45,10 @@ public static class UniversalUI
     /// <summary>The Consola font asset, if it was successfully loaded.</summary>
     public static Font ConsoleFont { get; private set; }
 
-    /// <summary>The default font asset.</summary>
-    public static Font DefaultFont { get; private set; }
+    /// <summary>The default font asset. Public setter so a consumer can swap the UI font
+    /// (e.g. to a script-capable font when translating the mod's own interface). Only affects
+    /// text created afterwards; existing text must be re-fonted by the consumer.</summary>
+    public static Font DefaultFont { get; set; }
 
     /// <summary>The backup UI shader, if it was loaded.</summary>
     public static Shader BackupShader { get; private set; }
