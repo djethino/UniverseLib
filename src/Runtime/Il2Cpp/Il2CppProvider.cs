@@ -28,6 +28,7 @@ namespace UniverseLib.Runtime.Il2Cpp
         readonly AmbiguousMemberHandler<ColorBlock, Color> highlightedColor = new(true, true, "highlightedColor", "m_HighlightedColor");
         readonly AmbiguousMemberHandler<ColorBlock, Color> pressedColor = new(true, true, "pressedColor", "m_PressedColor");
         readonly AmbiguousMemberHandler<ColorBlock, Color> disabledColor = new(true, true, "disabledColor", "m_DisabledColor");
+        readonly AmbiguousMemberHandler<ColorBlock, Color> selectedColor = new(true, true, "selectedColor", "m_SelectedColor");
 
         internal delegate IntPtr d_LayerToName(int layer);
 
@@ -160,6 +161,12 @@ namespace UniverseLib.Runtime.Il2Cpp
             if (normal != null)
             {
                 normalColor.SetValue(boxedColors, (Color)normal);
+
+                // Unity defaults selectedColor to WHITE. A control keeps the "selected" state after
+                // being clicked (until focus moves), so on a dark theme it turned bright white with
+                // white text on it. Nothing here themes it, so keep it on the normal colour —
+                // highlighted/pressed already convey interaction.
+                selectedColor.SetValue(boxedColors, (Color)normal);
             }
 
             if (highlighted != null)

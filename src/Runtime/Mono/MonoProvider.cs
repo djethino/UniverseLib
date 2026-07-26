@@ -17,6 +17,11 @@ namespace UniverseLib.Runtime.Mono
 {
     internal class MonoProvider : RuntimeHelper
     {
+        // ColorBlock.selectedColor only exists on newer Unity versions than the UI assembly we
+        // compile against, so reach it the tolerant way (no-op where the game predates it).
+        static readonly AmbiguousMemberHandler<ColorBlock, Color> selectedColorHandler
+            = new(true, true, "selectedColor", "m_SelectedColor");
+
         protected internal override void OnInitialize()
         {
             new MonoTextureHelper();
@@ -72,7 +77,17 @@ namespace UniverseLib.Runtime.Mono
             ColorBlock colors = selectable.colors;
 
             if (normal != null)
+            {
                 colors.normalColor = (Color)normal;
+
+                // Unity defaults selectedColor to WHITE. A control keeps the "selected" state after
+                // being clicked (until focus moves), so on a dark theme it turned bright white with
+                // white text on it. Nothing here themes it, so keep it on the normal colour —
+                // highlighted/pressed already convey interaction.
+                object boxedColors = colors;
+                selectedColorHandler.SetValue(boxedColors, (Color)normal);
+                colors = (ColorBlock)boxedColors;
+            }
 
             if (highlighted != null)
                 colors.highlightedColor = (Color)highlighted;
