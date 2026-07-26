@@ -1274,6 +1274,43 @@ namespace UniverseLib.UI
 
         #endregion
 
+        #region Label Height
+
+        /// <summary>
+        /// Make a wrapping label reserve the height it really draws, so a value spilling onto a
+        /// second line no longer overlaps the element below it. Use when the text must stay fully
+        /// readable (long URLs, disclaimers) instead of being trimmed with
+        /// <see cref="ConfigureEllipsis"/>.
+        /// </summary>
+        /// <param name="text">The label that may wrap onto several lines</param>
+        /// <param name="extraHeight">Optional extra space kept below the text</param>
+        /// <returns>The LabelHeightFitter component, or null if it could not be attached</returns>
+        public static Widgets.LabelHeightFitter ConfigureAutoHeight(Text text, float extraHeight = 0f)
+        {
+            if (text == null) return null;
+
+#if CPP
+            Widgets.LabelHeightFitter.RegisterType();
+#endif
+
+            try
+            {
+                var component = text.gameObject.GetComponent<Widgets.LabelHeightFitter>();
+                if (component == null)
+                    component = text.gameObject.AddComponent<Widgets.LabelHeightFitter>();
+
+                if (component != null) component.ExtraHeight = extraHeight;
+                return component;
+            }
+            catch (Exception ex)
+            {
+                Universe.LogWarning($"[UIFactory] Could not attach LabelHeightFitter: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
         #region Text Ellipsis
 
         /// <summary>
