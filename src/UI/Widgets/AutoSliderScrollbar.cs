@@ -39,6 +39,9 @@ namespace UniverseLib.UI.Widgets
             }
         }
 
+        /// <summary>Smallest height the grip may shrink to, in pixels.</summary>
+        public static float MinHandleHeight { get; set; } = 30f;
+
         public Slider Slider { get; }
         public Scrollbar Scrollbar { get; }
         public RectTransform ContentRect { get; }
@@ -110,7 +113,10 @@ namespace UniverseLib.UI.Widgets
             }
 
             float handleHeight = viewportHeight * Math.Min(1, viewportHeight / totalHeight);
-            handleHeight = Math.Max(15f, handleHeight);
+            // Floor the grip at a grabbable size: with very long content (a few hundred rows) the
+            // proportional height collapses to a couple of pixels, which reads as "no grip at all"
+            // and is near impossible to drag.
+            handleHeight = Math.Max(MinHandleHeight, handleHeight);
 
             // resize the handle container area for the size of the handle (bigger handle = smaller container)
 #if MONO

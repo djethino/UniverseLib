@@ -954,7 +954,10 @@ namespace UniverseLib.UI
             handleSlideRect.pivot = new Vector3(0.5f, 0.5f);
 
             Image handleImage = handleObj.AddComponent<Image>();
-            handleImage.color = new Color(0.5f, 0.5f, 0.5f, 1.0f);
+            // Image stays white; the ColorBlock below is the single source of the grip colour.
+            // Tinting here too multiplied the two (0.5 × 0.4 = 0.2) and left the grip almost as
+            // dark as its track — invisible whenever the content is long enough to shrink it.
+            handleImage.color = Color.white;
 
             RectTransform handleRect = handleObj.GetComponent<RectTransform>();
             handleRect.pivot = new Vector2(0.5f, 0.5f);
@@ -974,10 +977,10 @@ namespace UniverseLib.UI
             SetLayoutElement(mainObj, minWidth: 25, flexibleWidth: 0, flexibleHeight: 9999);
 
             RuntimeHelper.Instance.Internal_SetColorBlock(slider,
-                new Color(0.4f, 0.4f, 0.4f),
-                new Color(0.5f, 0.5f, 0.5f),
-                new Color(0.3f, 0.3f, 0.3f),
-                new Color(0.5f, 0.5f, 0.5f));
+                new Color(0.45f, 0.45f, 0.45f),
+                new Color(0.60f, 0.60f, 0.60f),
+                new Color(0.35f, 0.35f, 0.35f),
+                new Color(0.25f, 0.25f, 0.25f));
 
             return mainObj;
         }
@@ -1252,6 +1255,44 @@ namespace UniverseLib.UI
                 component = scrollContentObj.AddComponent<Widgets.FillViewportHeight>();
             }
             return component;
+        }
+
+        #endregion
+
+        #region Text Ellipsis
+
+        /// <summary>
+        /// Keep a label on one line and trim it with an ellipsis when it does not fit its width
+        /// (uGUI has no native ellipsis). Set the value through the returned component's
+        /// <see cref="Widgets.EllipsisLabel.FullText"/> afterwards, not through <c>Text.text</c>.
+        /// </summary>
+        /// <param name="text">The label to keep within its RectTransform</param>
+        /// <param name="fullText">Optional initial value; defaults to the label's current text</param>
+        /// <returns>The EllipsisLabel component, or null if it could not be attached</returns>
+        public static Widgets.EllipsisLabel ConfigureEllipsis(Text text, string fullText = null)
+        {
+            if (text == null) return null;
+
+#if CPP
+            Widgets.EllipsisLabel.RegisterType();
+#endif
+
+            try
+            {
+                var component = text.gameObject.GetComponent<Widgets.EllipsisLabel>();
+                if (component == null)
+                    component = text.gameObject.AddComponent<Widgets.EllipsisLabel>();
+
+                if (component != null && fullText != null)
+                    component.FullText = fullText;
+
+                return component;
+            }
+            catch (Exception ex)
+            {
+                Universe.LogWarning($"[UIFactory] Could not attach EllipsisLabel: {ex.Message}");
+                return null;
+            }
         }
 
         #endregion
