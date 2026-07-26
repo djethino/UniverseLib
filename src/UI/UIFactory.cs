@@ -21,6 +21,11 @@ namespace UniverseLib.UI
             = new(false, true, "m_HandleContainerRect");
 #endif
 
+        /// <summary>
+        /// Horizontal gap kept between a button's label and its edges (see ButtonLabelFitter).
+        /// </summary>
+        public static float ButtonLabelPadding { get; set; } = 10f;
+
         internal static Vector2 largeElementSize = new(100, 30);
         internal static Vector2 smallElementSize = new(25, 25);
         internal static Color defaultTextColor = Color.white;
@@ -436,6 +441,16 @@ namespace UniverseLib.UI
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.sizeDelta = Vector2.zero;
+            // Breathing room: the label used to span the whole button, so text sat flush against
+            // the edges. ButtonLabelFitter then lets the button grow when the label needs it.
+            rect.offsetMin = new Vector2(ButtonLabelPadding, 0f);
+            rect.offsetMax = new Vector2(-ButtonLabelPadding, 0f);
+
+#if CPP
+            Widgets.ButtonLabelFitter.RegisterType();
+#endif
+            try { buttonObj.AddComponent<Widgets.ButtonLabelFitter>(); }
+            catch (Exception ex) { Universe.LogWarning($"[UIFactory] Could not attach ButtonLabelFitter: {ex.Message}"); }
 
             SetButtonDeselectListener(button);
 
