@@ -436,6 +436,11 @@ namespace UniverseLib.UI
             textComp.text = text;
             SetDefaultTextValues(textComp);
             textComp.alignment = TextAnchor.MiddleCenter;
+            // A button label is a single line by definition. Wrapping (Unity's default) turns the
+            // horizontal padding below into a trap on narrow buttons: subtract it from a 24px icon
+            // button and the glyph no longer fits its usable width, so it wraps to a second line
+            // and — with vertical Overflow — renders below the button's centre.
+            textComp.horizontalOverflow = HorizontalWrapMode.Overflow;
 
             RectTransform rect = textObj.GetComponent<RectTransform>();
             rect.anchorMin = Vector2.zero;

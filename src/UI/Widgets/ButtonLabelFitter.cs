@@ -69,7 +69,16 @@ namespace UniverseLib.UI.Widgets
             if (_label.text == _lastText) return;
             _lastText = _label.text;
 
-            _layout.minWidth = Mathf.Max(_callerMinWidth, _label.preferredWidth + (Padding * 2f));
+            // Two widths, not one. The breathing margin goes to preferredWidth, which a layout
+            // group may give up when the row runs out of room; minWidth only guarantees the label
+            // itself fits. Pushing the padded width into minWidth made it a hard floor, so a row
+            // of translated buttons overflowed its parent instead of tightening — and a
+            // HorizontalLayoutGroup always overflows to the right, leaving the last button glued
+            // to the window edge while the first kept its margin.
+            float labelWidth = _label.preferredWidth;
+            float floor = Mathf.Max(_callerMinWidth, labelWidth);
+            _layout.minWidth = floor;
+            _layout.preferredWidth = Mathf.Max(floor, labelWidth + (Padding * 2f));
         }
 
         /// <summary>Re-evaluate now (e.g. after changing font size).</summary>
