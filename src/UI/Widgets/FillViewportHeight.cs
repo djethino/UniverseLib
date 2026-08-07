@@ -25,7 +25,8 @@ namespace UniverseLib.UI.Widgets
         private RectTransform _self;
         private RectTransform _viewport;
         private LayoutElement _layout;
-        private float _lastViewportHeight = -1f;
+        private HorizontalOrVerticalLayoutGroup _group;
+        private float _lastApplied = -1f;
         private bool _initialized;
 
 #if CPP
@@ -68,6 +69,10 @@ namespace UniverseLib.UI.Widgets
             if (_layout == null)
                 _layout = gameObject.AddComponent<LayoutElement>();
 
+            // The group that knows what the children need. Read directly rather than through
+            // LayoutUtility — see LateUpdate for why that would answer our own question back.
+            _group = GetComponent<HorizontalOrVerticalLayoutGroup>();
+
             // Parent of a ScrollRect content is the viewport (with the Mask).
             if (_self.parent != null)
                 _viewport = _self.parent.GetComponent<RectTransform>();
@@ -85,19 +90,37 @@ namespace UniverseLib.UI.Widgets
         {
             if (!_initialized) return;
 
-            float h = _viewport.rect.height;
-            if (Mathf.Abs(h - _lastViewportHeight) < 0.5f) return;
-            _lastViewportHeight = h;
+            // What the children actually need. Asked of the layout group itself and NOT of
+            // LayoutUtility, which would hand back the value we wrote here last frame: a
+            // LayoutElement outranks a layout group (priority 1 against 0), so LayoutUtility
+            // returns the element's value instead of the larger of the two.
+            //
+            // That priority is also why writing the viewport height alone was wrong. It did not
+            // raise a floor, it REPLACED what the children asked for — so content taller than
+            // the viewport was told it was exactly viewport-sized, and whatever sat at the end
+            // of it went out of reach with nothing to scroll to.
+            float children = 0f;
+            if (_group != null)
+            {
+                _group.CalculateLayoutInputVertical();
+                children = _group.preferredHeight;
+            }
 
-            // Setting preferredHeight is enough: ContentSizeFitter (PreferredSize) on this
-            // GameObject will pick max(LayoutElement.preferredHeight, VLG.preferredHeight).
-            _layout.preferredHeight = h;
+            float wanted = Mathf.Max(_viewport.rect.height, children);
+
+            // Compared against what we last APPLIED, not against the viewport: the content grows
+            // when a list fills up, not only when the window is resized, and keying on the
+            // viewport alone left that growth unnoticed for as long as the panel kept its size.
+            if (Mathf.Abs(wanted - _lastApplied) < 0.5f) return;
+            _lastApplied = wanted;
+
+            _layout.preferredHeight = wanted;
             LayoutRebuilder.MarkLayoutForRebuild(_self);
         }
 
         private void OnEnable()
         {
-            _lastViewportHeight = -1f;
+            _lastApplied = -1f;
         }
     }
 }
