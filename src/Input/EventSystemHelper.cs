@@ -101,10 +101,40 @@ namespace UniverseLib.Input
         /// If the UniverseLib EventSystem is not enabled, this enables it and sets EventSystem.current to it, and stores the previous EventSystem.
         /// Call this when opening interactive UI panels to ensure InputFields work correctly.
         /// </summary>
+        /// <summary>
+        /// Drop the remembered game EventSystem once it no longer exists.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ A scene load destroys the game's EventSystem, and the reference kept here is what we
+        /// hand the input back to. Left in place it is a destroyed object: Release finds it
+        /// "not null enough" to skip the fallback search but too dead to restore, and the game
+        /// never gets its EventSystem back — its menus stay dead for the rest of the session,
+        /// with no setting able to undo it.
+        ///
+        /// Checked from the real state on every take and every release rather than hooked onto a
+        /// scene event: a reference that has become invalid is a condition, not a moment, and the
+        /// check is one Unity null test. The search timestamp goes with it — that throttle exists
+        /// to avoid rescanning when there genuinely is no other EventSystem, which is a different
+        /// situation from one that has just been replaced.
+        /// </remarks>
+        static void ForgetDestroyedEventSystem()
+        {
+            if (lastEventSystem)
+                return;
+
+            if (lastInputModule || timeOfLastEventSystemSearch != 0f)
+            {
+                lastInputModule = null;
+                timeOfLastEventSystemSearch = 0f;
+            }
+        }
+
         public static void EnableEventSystem()
         {
             if (!UniversalUI.EventSys)
                 return;
+
+            ForgetDestroyedEventSystem();
 
             // Deactivate and store the current EventSystem
 
@@ -181,6 +211,8 @@ namespace UniverseLib.Input
 
             CheckVRChatEventSystemFix();
 
+            ForgetDestroyedEventSystem();
+
             if (!lastEventSystem
                 && !ConfigManager.Disable_Fallback_EventSystem_Search
                 && Time.realtimeSinceStartup - timeOfLastEventSystemSearch > 10f)
@@ -188,12 +220,12 @@ namespace UniverseLib.Input
                 FallbackEventSystemSearch();
             }
 
-            if (!lastEventSystem)
-            {
-                //Universe.LogWarning($"No previous EventSystem found to set back to!");
-                return;
-            }
-
+            // ⚠ Finding nobody to hand back to is NOT a reason to keep holding. Returning here —
+            // as this did — left our EventSystem enabled and current while the game's had been
+            // disabled or replaced, so nothing delivered to the game and nothing could undo it.
+            // Letting go unconditionally is strictly better: if the game has an EventSystem it
+            // starts working again, and if it has none, an EventSystem nobody uses costs nothing.
+            // Ours is turned back on by EnableEventSystem the next time a panel opens.
             settingEventSystem = true;
 
             UniversalUI.EventSys.enabled = false;
