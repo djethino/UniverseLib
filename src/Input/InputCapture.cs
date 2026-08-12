@@ -97,6 +97,7 @@ namespace UniverseLib.Input
                 yield return new KeyValuePair<string, Capability>(nameof(Keyboard), Keyboard);
                 yield return new KeyValuePair<string, Capability>(nameof(MouseButtons), MouseButtons);
                 yield return new KeyValuePair<string, Capability>(nameof(MouseAxes), MouseAxes);
+                yield return new KeyValuePair<string, Capability>(nameof(Devices), Devices);
             }
         }
 
@@ -203,6 +204,8 @@ namespace UniverseLib.Input
             {
                 const string none = "This game does not use Unity's legacy Input.";
                 Keyboard.Reason = MouseButtons.Reason = MouseAxes.Reason = none;
+                // No legacy Input is precisely when the Input System is likely to be the ONLY way in.
+                InitInputSystem();
                 return;
             }
 
@@ -210,6 +213,7 @@ namespace UniverseLib.Input
             PatchMouseButtons(input);
             PatchMouseAxes(input);
             PatchOwnInputModule();
+            InitInputSystem();
 
             foreach (var pair in Capabilities)
             {
@@ -273,6 +277,135 @@ namespace UniverseLib.Input
             MouseAxes.Available = MouseAxes.Patched.Count > 0;
             if (!MouseAxes.Available)
                 MouseAxes.Reason = "This game reads mouse movement through a method that cannot be intercepted.";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // New Input System
+        //
+        // Nothing above can touch it: a game on the Input System never calls UnityEngine.Input, so
+        // every patch there watches a road nobody drives on. Measured on a game reading everything
+        // that way — "patched, but the game never called it" on all three, and a camera that kept
+        // turning under an open menu.
+        //
+        // Taken at the DEVICE level (InputSystem.DisableDevice), the API's own way, which reverses
+        // cleanly. The granularity is coarser than the legacy side and that cannot be helped: a
+        // mouse is one device, so its buttons and its movement come and go together.
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        static Type t_InputSystem, t_Keyboard, t_Mouse;
+        static MethodInfo m_disableDevice, m_enableDevice;
+        static PropertyInfo p_keyboardCurrent, p_mouseCurrent;
+        static bool keyboardDisabled, mouseDisabled;
+
+        /// <summary>Devices taken from the game through the Input System, when it has one.</summary>
+        public static Capability Devices { get; } = new Capability();
+
+        static void InitInputSystem()
+        {
+            t_InputSystem = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputSystem");
+            if (t_InputSystem == null)
+            {
+                Devices.Reason = "This game does not use Unity's Input System package.";
+                return;
+            }
+
+            // ⚠ Refused when UniverseLib itself reads through the Input System: disabling those
+            // devices would take the menu's own keyboard and mouse along with the game's, leaving a
+            // window that cannot be clicked or closed. Better to do nothing, and say why.
+            if (InputManager.CurrentType == InputType.InputSystem)
+            {
+                Devices.Reason = "The menu itself reads through the Input System here; "
+                    + "taking those devices would make it unusable.";
+                return;
+            }
+
+            t_Keyboard = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Keyboard");
+            t_Mouse = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Mouse");
+            p_keyboardCurrent = t_Keyboard?.GetProperty("current");
+            p_mouseCurrent = t_Mouse?.GetProperty("current");
+
+            var device = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputDevice");
+            if (device != null)
+            {
+                m_disableDevice = t_InputSystem.GetMethod("DisableDevice", new Type[] { device });
+                m_enableDevice = t_InputSystem.GetMethod("EnableDevice", new Type[] { device });
+            }
+
+            if (m_disableDevice == null || m_enableDevice == null || (p_keyboardCurrent == null && p_mouseCurrent == null))
+            {
+                Devices.Reason = "This game's Input System does not expose device enabling.";
+                return;
+            }
+
+            Devices.Available = true;
+            if (p_keyboardCurrent != null) Devices.Patched.Add("Keyboard"); else Devices.Missed.Add("Keyboard");
+            if (p_mouseCurrent != null) Devices.Patched.Add("Mouse"); else Devices.Missed.Add("Mouse");
+        }
+
+        static object Current(PropertyInfo p)
+        {
+            try { return p == null ? null : p.GetValue(null, null); } catch { return null; }
+        }
+
+        static bool SetDevice(PropertyInfo current, bool disable)
+        {
+            object dev = Current(current);
+            if (dev == null)
+                return false;
+
+            try
+            {
+                (disable ? m_disableDevice : m_enableDevice).Invoke(null, new object[] { dev });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Universe.LogWarning($"[InputCapture] Could not {(disable ? "disable" : "enable")} an Input System device: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Bring the Input System devices in line with what is wanted. Called once per frame.
+        /// </summary>
+        /// <remarks>
+        /// Driven by comparing state rather than by reacting to an event, on purpose: a device the
+        /// game re-enables itself, or one plugged in mid-session, is brought back in line on the
+        /// next frame instead of staying wrong until something happens to fire again.
+        /// </remarks>
+        internal static void Tick()
+        {
+            if (!Devices.Available)
+                return;
+
+            bool wantKeyboard = Wants(CaptureKind.Keyboard);
+            // One device carries both, so either intent claims it.
+            bool wantMouse = Wants(CaptureKind.MouseButtons) || Wants(CaptureKind.MouseAxes);
+
+            if (wantKeyboard || wantMouse)
+                Devices.Asked++;
+
+            if (wantKeyboard != keyboardDisabled && SetDevice(p_keyboardCurrent, wantKeyboard))
+            {
+                keyboardDisabled = wantKeyboard;
+                if (wantKeyboard) Devices.Silenced++;
+            }
+
+            if (wantMouse != mouseDisabled && SetDevice(p_mouseCurrent, wantMouse))
+            {
+                mouseDisabled = wantMouse;
+                if (wantMouse) Devices.Silenced++;
+            }
+        }
+
+        /// <summary>
+        /// Hand every device back. A game left with its keyboard disabled is unplayable, and
+        /// nothing else would ever put that right.
+        /// </summary>
+        public static void ReleaseDevices()
+        {
+            if (keyboardDisabled && SetDevice(p_keyboardCurrent, false)) keyboardDisabled = false;
+            if (mouseDisabled && SetDevice(p_mouseCurrent, false)) mouseDisabled = false;
         }
 
         /// <summary>

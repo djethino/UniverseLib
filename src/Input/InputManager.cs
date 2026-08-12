@@ -250,6 +250,8 @@ namespace UniverseLib.Input
 
         internal static void Update()
         {
+            InputCapture.Tick();
+
             if (Rebinding)
             {
                 KeyCode? kc = GetCurrentKeyDown();
