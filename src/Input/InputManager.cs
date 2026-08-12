@@ -28,6 +28,9 @@ namespace UniverseLib.Input
             InitKeycodes();
             CursorUnlocker.Init();
             EventSystemHelper.Init();
+            // After InitHandler: it is what establishes whether legacy Input is even present.
+            // Patches only — nothing is captured until a consumer sets InputCapture.ShouldCapture.
+            InputCapture.Init();
         }
 
         private static void InitHandler()

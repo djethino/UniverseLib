@@ -45,13 +45,25 @@ namespace UniverseLib.Input
         public Vector2 MousePosition => (Vector3)p_mousePosition.GetValue(null, null);
         public Vector2 MouseScrollDelta => (Vector2)p_mouseDelta.GetValue(null, null);
 
-        public bool GetKey(KeyCode key) => (bool)m_getKey.Invoke(null, new object[] { key });
-        public bool GetKeyDown(KeyCode key) => (bool)m_getKeyDown.Invoke(null, new object[] { key });
-        public bool GetKeyUp(KeyCode key) => (bool)m_getKeyUp.Invoke(null, new object[] { key });
+        // Every read below goes through UnityEngine.Input, which InputCapture may be patching to
+        // answer "nothing pressed" for the game. These reads are NOT the game's: they are how the
+        // consumer's own hotkeys are detected — including the one that closes the menu. Reading
+        // them under Bypass is what keeps that key working while the game's copy of it is taken.
+        static T Own<T>(Func<T> read)
+        {
+            bool previous = InputCapture.Bypass;
+            InputCapture.Bypass = true;
+            try { return read(); }
+            finally { InputCapture.Bypass = previous; }
+        }
 
-        public bool GetMouseButton(int btn) => (bool)m_getMouseButton.Invoke(null, new object[] { btn });
-        public bool GetMouseButtonDown(int btn) => (bool)m_getMouseButtonDown.Invoke(null, new object[] { btn });
-        public bool GetMouseButtonUp(int btn) => (bool)m_getMouseButtonUp.Invoke(null, new object[] { btn });
+        public bool GetKey(KeyCode key) => Own(() => (bool)m_getKey.Invoke(null, new object[] { key }));
+        public bool GetKeyDown(KeyCode key) => Own(() => (bool)m_getKeyDown.Invoke(null, new object[] { key }));
+        public bool GetKeyUp(KeyCode key) => Own(() => (bool)m_getKeyUp.Invoke(null, new object[] { key }));
+
+        public bool GetMouseButton(int btn) => Own(() => (bool)m_getMouseButton.Invoke(null, new object[] { btn }));
+        public bool GetMouseButtonDown(int btn) => Own(() => (bool)m_getMouseButtonDown.Invoke(null, new object[] { btn }));
+        public bool GetMouseButtonUp(int btn) => Own(() => (bool)m_getMouseButtonUp.Invoke(null, new object[] { btn }));
 
         public void ResetInputAxes() => m_resetInputAxes.Invoke(null, ArgumentUtility.EmptyArgs);
 
