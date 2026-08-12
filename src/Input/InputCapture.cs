@@ -191,7 +191,29 @@ namespace UniverseLib.Input
         /// </remarks>
         static bool Wants(CaptureKind kind, Strategy counter)
         {
-            if (Bypass || ConsumerReading)
+            return Wants(kind, counter, honourBypass: true);
+        }
+
+        /// <summary>
+        /// <paramref name="honourBypass"/> is false for raycasts, and that is not an optimisation.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ Bypass exempts UniverseLib's own READS of the input API, which cannot tell who is
+        /// asking. A raycast can: ours is recognised by hierarchy before we ever get here. And
+        /// Bypass is set for the whole of our module's Process — which is exactly when raycasting
+        /// happens, so honouring it there exempted every raycaster in the scene and silently
+        /// turned the whole thing off. Measured: 236208 blocks before, "let through" on every line
+        /// after.
+        ///
+        /// ConsumerReading is still honoured either way: that one is the consumer deliberately
+        /// looking into the game, and it must reach past everything.
+        /// </remarks>
+        static bool Wants(CaptureKind kind, Strategy counter, bool honourBypass)
+        {
+            if (ConsumerReading)
+                return false;
+
+            if (honourBypass && Bypass)
                 return false;
 
             var ask = ShouldCapture;
@@ -258,8 +280,16 @@ namespace UniverseLib.Input
             }
         }
 
+        static void Narrate(UnityEngine.EventSystems.BaseRaycaster caster, string verdict)
+        {
+            _diagnoseLines--;
+            Universe.Log($"[InputCapture] raycast by '{caster.name}' ({caster.GetType().Name}) → {verdict}");
+        }
+
         internal static void Tick()
         {
+            if (_diagnoseFrames > 0) _diagnoseFrames--;
+
             foreach (var s in _strategies)
             {
                 if (!s.Available) continue;
@@ -380,17 +410,29 @@ namespace UniverseLib.Input
             /// </remarks>
             void ProtectOwnInputModule()
             {
-                var module = ReflectionUtility.GetTypeByName("UnityEngine.EventSystems.StandaloneInputModule");
-                if (module == null)
-                    return;
+                // ⚠ BOTH module types, because which one UniverseLib runs depends on the game:
+                // StandaloneInputModule on legacy input, InputSystemUIInputModule where the Input
+                // System is what answers. Patching only the first left every Input System game
+                // with no protection at all and no marker — silently, since nothing fails, the
+                // prefix simply never runs.
+                bool any = false;
+                any |= PatchModule("UnityEngine.EventSystems.StandaloneInputModule");
+                any |= PatchModule("UnityEngine.InputSystem.UI.InputSystemUIInputModule");
 
-                bool ok = Universe.Patch(module, "Process", MethodType.Normal, Type.EmptyTypes,
-                    prefix: AccessTools.Method(typeof(InputCapture), nameof(Prefix_Module_Process)),
-                    finalizer: AccessTools.Method(typeof(InputCapture), nameof(Finalizer_Module_Process)));
-
-                if (!ok && Available)
+                if (!any && Available)
                     Universe.LogWarning("[InputCapture] Could not protect the menu's own input module — "
                         + "capturing may make the menu unresponsive on this game.");
+            }
+
+            static bool PatchModule(string typeName)
+            {
+                var module = ReflectionUtility.GetTypeByName(typeName);
+                if (module == null)
+                    return false;
+
+                return Universe.Patch(module, "Process", MethodType.Normal, Type.EmptyTypes,
+                    prefix: AccessTools.Method(typeof(InputCapture), nameof(Prefix_Module_Process)),
+                    finalizer: AccessTools.Method(typeof(InputCapture), nameof(Finalizer_Module_Process)));
             }
         }
 
@@ -447,10 +489,26 @@ namespace UniverseLib.Input
         /// <summary>Bypass while OUR module processes; a finalizer clears it whatever happens.</summary>
         public static void Prefix_Module_Process(object __instance)
         {
-            var legacy = InputManager.inputHandler as LegacyInput;
-            if (legacy != null && legacy.inputModule != null && ReferenceEquals(legacy.inputModule, __instance))
+            // Ask the handler for ITS module, whichever kind it is — casting to LegacyInput
+            // answered null on every Input System game, so this whole guard did nothing there.
+            var handler = InputManager.inputHandler;
+            var ours = handler == null ? null : handler.UIInputModule;
+            if (ours != null && ReferenceEquals(ours, __instance))
+            {
                 Bypass = true;
+                InModuleProcess = true;
+            }
         }
+
+        /// <summary>
+        /// True while our input module is delivering events — i.e. inside somebody's OnClick.
+        /// </summary>
+        /// <remarks>
+        /// Not the same thing as <see cref="Bypass"/>, which is also set around ordinary reads:
+        /// this one means "an event is being dispatched right now". Used by PanelBase to know that
+        /// closing itself would pull the ground from under the click currently being resolved.
+        /// </remarks>
+        internal static bool InModuleProcess { get; private set; }
 
         /// <summary>
         /// Finalizer, not postfix, on purpose: it runs even if the module throws, so an exception
@@ -460,6 +518,7 @@ namespace UniverseLib.Input
         public static void Finalizer_Module_Process()
         {
             Bypass = false;
+            InModuleProcess = false;
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -572,22 +631,51 @@ namespace UniverseLib.Input
         /// simply finds nothing there. Deliberately not clearing the result list afterwards: other
         /// raycasters — ours — have already contributed to it.
         /// </remarks>
+        // Frames left to narrate every raycast. Armed by the consumer around a moment worth
+        // watching — a panel closing, typically — because logging every raycast of every frame
+        // would drown the very lines it is meant to produce.
+        static int _diagnoseFrames;
+        static int _diagnoseLines;
+
+        /// <summary>
+        /// Narrate the next raycasts to the log: who asked, and whether it was let through.
+        /// </summary>
+        /// <remarks>
+        /// For the case nobody can explain from outside the game — a click that reaches something
+        /// behind a window that was supposed to be holding it. Capped in lines as well as in
+        /// frames: a busy scene raycasts dozens of times per frame.
+        /// </remarks>
+        public static void DiagnoseNext(int frames)
+        {
+            _diagnoseFrames = frames;
+            _diagnoseLines = 40;
+        }
+
         public static bool Prefix_Raycast(UnityEngine.EventSystems.BaseRaycaster __instance)
         {
             if (__instance == null)
                 return true;
+
+            bool narrate = _diagnoseFrames > 0 && _diagnoseLines > 0;
 
             // Ours goes through, always. Compared by hierarchy rather than by a registry: panels,
             // popups and dropdowns all live under the one root, and a dropdown blocker created
             // three frames ago would not be in any list we kept.
             var root = UI.UniversalUI.CanvasRoot;
             if (root != null && __instance.transform.IsChildOf(root.transform))
+            {
+                if (narrate) Narrate(__instance, "ours, let through");
                 return true;
+            }
 
-            if (!Wants(CaptureKind.MouseButtons, Raycasts))
+            if (!Wants(CaptureKind.MouseButtons, Raycasts, honourBypass: false))
+            {
+                if (narrate) Narrate(__instance, "NOT captured, let through");
                 return true;
+            }
 
             if (Raycasts != null) Raycasts.Silenced++;
+            if (narrate) Narrate(__instance, "blocked");
             return false;
         }
 

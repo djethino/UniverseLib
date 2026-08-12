@@ -68,8 +68,31 @@ namespace UniverseLib.UI.Panels
         {
         }
 
+        // Frame on which this panel asked to close from inside a click. -1 = not pending.
+        int closeRequestedOnFrame = -1;
+
         public override void SetActive(bool active)
         {
+            // ⚠ Closing from inside an OnClick pulls the ground from under the click being
+            // resolved: the pressed object goes inactive mid-dispatch, and the module then looks
+            // for somewhere else to deliver it — which is how clicking a panel's close button
+            // ended up pressing whatever the game had behind it.
+            //
+            // Measured before this existed: during the capture every one of the game's raycasters
+            // was correctly blocked, and the click still landed the moment input was handed back.
+            // It was never travelling through; it was waiting. So delaying the handover changed
+            // nothing (2 frames and 10 were both tried) — what had to move was the disappearing.
+            //
+            // One frame is enough: the module finishes this dispatch on a button that still
+            // exists, and the panel goes away before anyone could see it linger.
+            if (!active && InputCapture.InModuleProcess)
+            {
+                closeRequestedOnFrame = Time.frameCount;
+                return;
+            }
+
+            closeRequestedOnFrame = -1;
+
             if (this.Enabled != active)
                 base.SetActive(active);
 
@@ -82,6 +105,18 @@ namespace UniverseLib.UI.Panels
             }
         }
         
+        /// <summary>
+        /// Carry out a close that was asked for from inside a click, once that click is over.
+        /// </summary>
+        internal void TickPendingClose()
+        {
+            if (closeRequestedOnFrame < 0 || Time.frameCount <= closeRequestedOnFrame)
+                return;
+
+            closeRequestedOnFrame = -1;
+            SetActive(false);
+        }
+
         protected virtual void OnClosePanelClicked()
         {
             this.SetActive(false);

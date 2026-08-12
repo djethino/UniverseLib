@@ -168,6 +168,11 @@ public class PanelManager
     // invoked from parent UIBase.Update
     internal protected virtual void Update()
     {
+        // Panels that asked to close from inside a click do it here instead, one frame later,
+        // so the click finishes on a button that still exists. See PanelBase.SetActive.
+        for (int i = panelInstances.Count - 1; i >= 0; i--)
+            panelInstances[i].TickPendingClose();
+
         if (!ResizePrompting && ShouldUpdateFocus)
             UpdateFocus();
 
