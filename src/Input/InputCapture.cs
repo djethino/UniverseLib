@@ -3,8 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
-using UniverseLib.Config;
-using UniverseLib.UI;
 
 namespace UniverseLib.Input
 {
@@ -14,164 +12,159 @@ namespace UniverseLib.Input
     /// <remarks>
     /// UniverseLib already stops the game from taking the cursor back (<see cref="CursorUnlocker"/>)
     /// and from owning the EventSystem (<see cref="EventSystemHelper"/>). Neither stops the game
-    /// from READING input itself: a game whose Update calls Input.GetAxis("Mouse X") without
-    /// checking Cursor.lockState keeps turning the camera under an open menu, and one calling
-    /// Input.GetKey keeps walking while someone types in a text field.
+    /// from READING input itself: one whose Update calls Input.GetAxis("Mouse X") without checking
+    /// Cursor.lockState keeps turning the camera under an open menu, and one calling Input.GetKey
+    /// keeps walking while somebody types in a text field.
     ///
-    /// This closes that gap by making the legacy Input API answer "nothing is pressed" while a UI
-    /// asks for it. Off by default: a library does not change what every existing consumer does.
+    /// Off by default — a library does not change what every existing consumer does. Set
+    /// <see cref="ShouldCapture"/> and nothing more; everything below decides by itself HOW, or
+    /// says why it cannot.
     ///
-    /// ⚠ Several members of UnityEngine.Input are InternalCall and therefore have no IL body, so
-    /// Harmony cannot patch them. Which ones varies by runtime (Mono vs IL2CPP), Unity version and
-    /// stripping, so this class does NOT carry a table of what works — it tries, records the
-    /// outcome, and publishes it through <see cref="Capabilities"/>. Callers show or grey out their
-    /// own options from that, with <see cref="Capability.Reason"/> as the explanation.
+    /// ── Intention vs means ──────────────────────────────────────────────────────────────
+    /// A <see cref="CaptureKind"/> is what a consumer WANTS ("the keyboard is mine while my window
+    /// is open"). A <see cref="Strategy"/> is one way of obtaining it, and which ones work is a
+    /// property of the game, not of the request. Three configurations, all measured on real games:
+    ///
+    ///   game reads legacy,       we read legacy  → patches work
+    ///   game reads Input System, we read legacy  → taking its devices works
+    ///   game reads Input System, we read it too  → NEITHER works yet: cutting the source would
+    ///                                              cut the menu's own input with it
+    ///
+    /// Hence: no table of what works, anywhere. Each strategy probes at startup and reports, and a
+    /// caller asks <see cref="CanCapture"/> / <see cref="WhyNot"/> per intention — which is exactly
+    /// what a settings screen needs to show an option or grey it out with a reason.
     /// </remarks>
     public static class InputCapture
     {
-        /// <summary>One thing a caller may want to take from the game, and whether it can be had here.</summary>
-        public class Capability
-        {
-            /// <summary>True when the underlying methods were successfully patched on this game.</summary>
-            public bool Available { get; internal set; }
-
-            /// <summary>Why it is unavailable, in words a user interface can show. Null when available.</summary>
-            public string Reason { get; internal set; }
-
-            /// <summary>Methods actually patched — for diagnostics, and to explain partial coverage.</summary>
-            public List<string> Patched { get; } = new List<string>();
-
-            /// <summary>Methods that could not be patched, with the reason each failed.</summary>
-            public List<string> Missed { get; } = new List<string>();
-
-            /// <summary>Times the game asked, while capture was on. Zero means it reads elsewhere.</summary>
-            public int Asked { get; internal set; }
-
-            /// <summary>Times an answer was actually replaced.</summary>
-            public int Silenced { get; internal set; }
-
-            /// <summary>
-            /// What happened, in one line — the only way to tell "the game reads through another
-            /// API" from "the capture never armed", which look identical from the outside.
-            /// </summary>
-            public string Describe()
-            {
-                if (!Available) return $"unavailable ({Reason})";
-                if (Asked == 0) return "patched, but the game never called it — it reads input through another API";
-                return $"{Silenced}/{Asked} reads silenced";
-            }
-
-            internal void ResetActivity() { Asked = 0; Silenced = 0; }
-        }
-
-        /// <summary>Forget the per-session counters, so the next report covers one episode only.</summary>
-        public static void ResetActivity()
-        {
-            foreach (var pair in Capabilities)
-                pair.Value.ResetActivity();
-        }
-
-        /// <summary>One line per capability: what it managed to do since the last reset.</summary>
-        public static string DescribeActivity()
-        {
-            var parts = new List<string>();
-            foreach (var pair in Capabilities)
-                parts.Add($"{pair.Key}: {pair.Value.Describe()}");
-            return string.Join(" | ", parts.ToArray());
-        }
-
-        /// <summary>Keys: Input.GetKey / GetKeyDown / GetKeyUp.</summary>
-        public static Capability Keyboard { get; } = new Capability();
-
-        /// <summary>Mouse buttons: Input.GetMouseButton / GetMouseButtonDown / GetMouseButtonUp.</summary>
-        public static Capability MouseButtons { get; } = new Capability();
-
-        /// <summary>Mouse movement: Input.GetAxis / GetAxisRaw for the mouse axes — the FPS camera.</summary>
-        public static Capability MouseAxes { get; } = new Capability();
-
-        /// <summary>All three, for callers that want to enumerate rather than name them.</summary>
-        public static IEnumerable<KeyValuePair<string, Capability>> Capabilities
-        {
-            get
-            {
-                yield return new KeyValuePair<string, Capability>(nameof(Keyboard), Keyboard);
-                yield return new KeyValuePair<string, Capability>(nameof(MouseButtons), MouseButtons);
-                yield return new KeyValuePair<string, Capability>(nameof(MouseAxes), MouseAxes);
-                yield return new KeyValuePair<string, Capability>(nameof(Devices), Devices);
-            }
-        }
-
-        // ─────────────────────────────────────────────────────────────────────────────
-        // What is being captured right now. Set by the consumer, read by the prefixes.
-        // ─────────────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Whether each capture is wanted at this instant — asked every time the game reads input,
-        /// so a caller can vary it moment to moment rather than for a whole session.
-        ///
-        /// Left null (the default) nothing is ever captured, whatever the flags below say. This is
-        /// what keeps the library's existing behaviour unchanged for consumers that never heard of
-        /// this class.
-        /// </summary>
-        public static Func<CaptureKind, bool> ShouldCapture { get; set; }
-
-        /// <summary>The three things <see cref="ShouldCapture"/> is asked about.</summary>
+        /// <summary>The things a consumer can ask for.</summary>
         public enum CaptureKind
         {
             /// <summary>Keys.</summary>
             Keyboard,
             /// <summary>Mouse buttons.</summary>
             MouseButtons,
-            /// <summary>Mouse movement axes.</summary>
+            /// <summary>Mouse movement axes — the first-person camera.</summary>
             MouseAxes,
         }
 
+        static readonly CaptureKind[] AllKinds =
+        {
+            CaptureKind.Keyboard, CaptureKind.MouseButtons, CaptureKind.MouseAxes
+        };
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Strategies
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>One way of taking input from the game, and whether it works here.</summary>
+        public abstract class Strategy
+        {
+            /// <summary>Short name, for logs and diagnostics.</summary>
+            public abstract string Name { get; }
+
+            /// <summary>True once <see cref="Probe"/> found this usable on this game.</summary>
+            public bool Available { get; protected set; }
+
+            /// <summary>Why it is not usable, in words a settings screen can show. Null when it is.</summary>
+            public string Reason { get; protected set; }
+
+            /// <summary>What it managed to hook, and what slipped through — for diagnostics.</summary>
+            public List<string> Hooked { get; } = new List<string>();
+            /// <inheritdoc cref="Hooked"/>
+            public List<string> Missed { get; } = new List<string>();
+
+            /// <summary>Times the game came through here while capture was on.</summary>
+            public int Asked { get; internal set; }
+            /// <summary>Times something was actually taken.</summary>
+            public int Silenced { get; internal set; }
+
+            /// <summary>Does this strategy serve that intention on this game?</summary>
+            public abstract bool Serves(CaptureKind kind);
+
+            /// <summary>Work out whether this can be used here. Called once, at startup.</summary>
+            public abstract void Probe();
+
+            /// <summary>Called every frame for strategies that act rather than intercept.</summary>
+            public virtual void Tick() { }
+
+            /// <summary>Give everything back. Must be safe to call when nothing was taken.</summary>
+            public virtual void Release() { }
+
+            /// <summary>
+            /// One line: what this managed since the last reset. Distinguishes the three outcomes
+            /// that look alike from outside the game — unusable, usable but never solicited
+            /// (the game reads elsewhere), and working.
+            /// </summary>
+            public string Describe()
+            {
+                if (!Available) return $"unavailable ({Reason})";
+                if (Asked == 0) return "ready, but the game never came through it";
+                return $"{Silenced}/{Asked} taken";
+            }
+
+            internal void ResetActivity() { Asked = 0; Silenced = 0; }
+        }
+
+        static readonly List<Strategy> _strategies = new List<Strategy>();
+
+        /// <summary>Every known strategy, probed or not.</summary>
+        public static IEnumerable<Strategy> Strategies { get { return _strategies; } }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // What a consumer asks for
+        // ─────────────────────────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Set while UniverseLib itself is the one reading input. Nothing is captured then.
+        /// Asked every time the game reads input, so a consumer can vary its answer moment to
+        /// moment rather than for a whole session. Null (the default) captures nothing at all.
+        /// </summary>
+        public static Func<CaptureKind, bool> ShouldCapture { get; set; }
+
+        /// <summary>
+        /// Set while UniverseLib itself is the one reading. Nothing is captured then.
         /// </summary>
         /// <remarks>
         /// ⚠ Load-bearing. The patches sit on UnityEngine.Input, which cannot tell who is asking —
         /// and UniverseLib asks constantly: <see cref="LegacyInput"/> for the consumer's hotkeys,
-        /// and its own StandaloneInputModule for every click and every arrow key inside the menu.
-        /// Without this, turning capture on would make the menu unclickable and its opening hotkey
-        /// dead — a UI you cannot close because it captured the key that closes it.
+        /// its own StandaloneInputModule for every click and arrow key inside the menu. Without
+        /// this, capturing would make the menu unclickable and its opening hotkey dead: a window
+        /// you cannot close because it captured the key that closes it.
         /// </remarks>
         internal static bool Bypass { get; set; }
 
-        static Capability Of(CaptureKind kind)
+        /// <summary>Is that intention obtainable on this game, by any means?</summary>
+        public static bool CanCapture(CaptureKind kind)
         {
-            switch (kind)
+            foreach (var s in _strategies)
             {
-                case CaptureKind.MouseButtons: return MouseButtons;
-                case CaptureKind.MouseAxes: return MouseAxes;
-                default: return Keyboard;
+                if (s.Available && s.Serves(kind))
+                    return true;
             }
+            return false;
         }
 
         /// <summary>
-        /// Same question, without touching the counters.
+        /// Why that intention cannot be served here — the reason of every strategy that would have
+        /// served it. Null when it can be. This is the text a greyed-out option should carry.
         /// </summary>
-        /// <remarks>
-        /// ⚠ For callers that ask on their own schedule rather than because the game read
-        /// something — <see cref="Tick"/>, once a frame. Counting those made "Keyboard: 0/3222"
-        /// look like three thousand reads by the game when it was three thousand frames of ours,
-        /// which is worse than no measurement at all: it reads as a working capture on a game that
-        /// never came near the API.
-        /// </remarks>
-        static bool WantsQuiet(CaptureKind kind)
+        public static string WhyNot(CaptureKind kind)
         {
-            if (Bypass)
-                return false;
+            if (CanCapture(kind))
+                return null;
 
-            var ask = ShouldCapture;
-            if (ask == null)
-                return false;
+            var reasons = new List<string>();
+            foreach (var s in _strategies)
+            {
+                if (s.Serves(kind) && !string.IsNullOrEmpty(s.Reason) && !reasons.Contains(s.Reason))
+                    reasons.Add(s.Reason);
+            }
 
-            try { return ask(kind); }
-            catch { return false; }
+            return reasons.Count > 0
+                ? string.Join(" ", reasons.ToArray())
+                : "This game gives no way to take that from it.";
         }
 
-        static bool Wants(CaptureKind kind)
+        static bool Wants(CaptureKind kind, bool count)
         {
             if (Bypass)
                 return false;
@@ -183,354 +176,260 @@ namespace UniverseLib.Input
             try
             {
                 bool wanted = ask(kind);
-                // Counted only while capture is ON, so "asked 0 times" reads as "the game never
-                // came through here while we held the input" — never as "nobody opened a panel".
-                if (wanted) Of(kind).Asked++;
+                if (wanted && count)
+                {
+                    // Counted on the read, never on our own polling: counting Tick's once-a-frame
+                    // question made "0/3222" look like three thousand reads by a game that had
+                    // never touched the API. A tally that reads as a working capture where there
+                    // is none is worse than no tally.
+                    foreach (var s in _strategies)
+                    {
+                        if (s.Available && s.Serves(kind)) s.Asked++;
+                    }
+                }
                 return wanted;
             }
             catch (Exception ex)
             {
-                // A consumer's callback throwing must not make the game's input throw. Reported,
-                // not swallowed: a silent false here would look exactly like "capture is off".
                 Universe.LogWarning($"[InputCapture] ShouldCapture({kind}) threw, treating as no capture: {ex}");
                 return false;
             }
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
-        // Setup
+        // Lifecycle
         // ─────────────────────────────────────────────────────────────────────────────
 
         static bool initialized;
 
-        /// <summary>
-        /// Try to patch the legacy Input API. Safe to call when the game has no legacy Input at
-        /// all: every capability then reports unavailable with that as its reason.
-        /// </summary>
         internal static void Init()
         {
             if (initialized)
                 return;
             initialized = true;
 
-            Type input = null;
-            try
+            _strategies.Add(new LegacyPatchStrategy());
+            _strategies.Add(new InputSystemDeviceStrategy());
+
+            foreach (var s in _strategies)
             {
-                input = ReflectionUtility.GetTypeByName("UnityEngine.Input");
-            }
-            catch (Exception ex)
-            {
-                Universe.LogWarning($"[InputCapture] Could not look up UnityEngine.Input: {ex.Message}");
-            }
-
-            if (input == null)
-            {
-                const string none = "This game does not use Unity's legacy Input.";
-                Keyboard.Reason = MouseButtons.Reason = MouseAxes.Reason = none;
-                // No legacy Input is precisely when the Input System is likely to be the ONLY way in.
-                InitInputSystem();
-                return;
-            }
-
-            PatchKeyboard(input);
-            PatchMouseButtons(input);
-            PatchMouseAxes(input);
-            PatchOwnInputModule();
-            InitInputSystem();
-
-            foreach (var pair in Capabilities)
-            {
-                var c = pair.Value;
-                if (c.Available)
-                    Universe.Log($"[InputCapture] {pair.Key}: can be captured ({c.Patched.Count} method(s))"
-                        + (c.Missed.Count > 0 ? $", {c.Missed.Count} out of reach: {string.Join(", ", c.Missed.ToArray())}" : ""));
-                else
-                    Universe.Log($"[InputCapture] {pair.Key}: cannot be captured — {c.Reason}");
-            }
-        }
-
-        /// <summary>
-        /// Patch one method and record the outcome on <paramref name="cap"/>.
-        /// Returns whether it took.
-        /// </summary>
-        static bool TryPatch(Capability cap, Type type, string method, Type[] args, string prefixName)
-        {
-            var prefix = AccessTools.Method(typeof(InputCapture), prefixName);
-            bool ok = Universe.Patch(type, method, MethodType.Normal, args, postfix: prefix);
-
-            string label = args != null && args.Length > 0
-                ? $"{method}({args[0].Name})"
-                : method;
-
-            if (ok) cap.Patched.Add(label);
-            else cap.Missed.Add(label);
-            return ok;
-        }
-
-        static void PatchKeyboard(Type input)
-        {
-            TryPatch(Keyboard, input, "GetKey", new[] { typeof(KeyCode) }, nameof(Postfix_Bool));
-            TryPatch(Keyboard, input, "GetKey", new[] { typeof(string) }, nameof(Postfix_Bool));
-            TryPatch(Keyboard, input, "GetKeyDown", new[] { typeof(KeyCode) }, nameof(Postfix_Bool));
-            TryPatch(Keyboard, input, "GetKeyDown", new[] { typeof(string) }, nameof(Postfix_Bool));
-            TryPatch(Keyboard, input, "GetKeyUp", new[] { typeof(KeyCode) }, nameof(Postfix_Bool));
-            TryPatch(Keyboard, input, "GetKeyUp", new[] { typeof(string) }, nameof(Postfix_Bool));
-
-            Keyboard.Available = Keyboard.Patched.Count > 0;
-            if (!Keyboard.Available)
-                Keyboard.Reason = "This game's key checks cannot be intercepted (no patchable method).";
-        }
-
-        static void PatchMouseButtons(Type input)
-        {
-            TryPatch(MouseButtons, input, "GetMouseButton", new[] { typeof(int) }, nameof(Postfix_Bool));
-            TryPatch(MouseButtons, input, "GetMouseButtonDown", new[] { typeof(int) }, nameof(Postfix_Bool));
-            TryPatch(MouseButtons, input, "GetMouseButtonUp", new[] { typeof(int) }, nameof(Postfix_Bool));
-
-            MouseButtons.Available = MouseButtons.Patched.Count > 0;
-            if (!MouseButtons.Available)
-                MouseButtons.Reason = "This game's mouse buttons are read through a method that cannot be intercepted.";
-        }
-
-        static void PatchMouseAxes(Type input)
-        {
-            TryPatch(MouseAxes, input, "GetAxis", new[] { typeof(string) }, nameof(Postfix_Axis));
-            TryPatch(MouseAxes, input, "GetAxisRaw", new[] { typeof(string) }, nameof(Postfix_Axis));
-
-            MouseAxes.Available = MouseAxes.Patched.Count > 0;
-            if (!MouseAxes.Available)
-                MouseAxes.Reason = "This game reads mouse movement through a method that cannot be intercepted.";
-        }
-
-        // ─────────────────────────────────────────────────────────────────────────────
-        // New Input System
-        //
-        // Nothing above can touch it: a game on the Input System never calls UnityEngine.Input, so
-        // every patch there watches a road nobody drives on. Measured on a game reading everything
-        // that way — "patched, but the game never called it" on all three, and a camera that kept
-        // turning under an open menu.
-        //
-        // Taken at the DEVICE level (InputSystem.DisableDevice), the API's own way, which reverses
-        // cleanly. The granularity is coarser than the legacy side and that cannot be helped: a
-        // mouse is one device, so its buttons and its movement come and go together.
-        // ─────────────────────────────────────────────────────────────────────────────
-
-        static Type t_InputSystem, t_Keyboard, t_Mouse;
-        static MethodInfo m_disableDevice, m_enableDevice;
-        static PropertyInfo p_keyboardCurrent, p_mouseCurrent;
-        static bool keyboardDisabled, mouseDisabled;
-
-        /// <summary>Devices taken from the game through the Input System, when it has one.</summary>
-        public static Capability Devices { get; } = new Capability();
-
-        static void InitInputSystem()
-        {
-            t_InputSystem = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputSystem");
-            if (t_InputSystem == null)
-            {
-                Devices.Reason = "This game does not use Unity's Input System package.";
-                return;
-            }
-
-            // ⚠ Refused when UniverseLib itself reads through the Input System: disabling those
-            // devices would take the menu's own keyboard and mouse along with the game's, leaving a
-            // window that cannot be clicked or closed. Better to do nothing, and say why.
-            if (InputManager.CurrentType == InputType.InputSystem)
-            {
-                Devices.Reason = "The menu itself reads through the Input System here; "
-                    + "taking those devices would make it unusable.";
-                return;
-            }
-
-            t_Keyboard = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Keyboard");
-            t_Mouse = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Mouse");
-            p_keyboardCurrent = t_Keyboard?.GetProperty("current");
-            p_mouseCurrent = t_Mouse?.GetProperty("current");
-
-            var device = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputDevice");
-            m_disableDevice = FindDeviceMethod("DisableDevice", device);
-            m_enableDevice = FindDeviceMethod("EnableDevice", device);
-
-            if (m_disableDevice == null || m_enableDevice == null || (p_keyboardCurrent == null && p_mouseCurrent == null))
-            {
-                // Name what is missing. "Does not expose device enabling" sent us looking at the
-                // game when the fault was a signature we had asked for too precisely.
-                var missing = new List<string>();
-                if (m_disableDevice == null) missing.Add("InputSystem.DisableDevice");
-                if (m_enableDevice == null) missing.Add("InputSystem.EnableDevice");
-                if (p_keyboardCurrent == null && p_mouseCurrent == null) missing.Add("Keyboard.current / Mouse.current");
-
-                Devices.Reason = "This game's Input System is missing " + string.Join(", ", missing.ToArray()) + ".";
-                return;
-            }
-
-            Devices.Available = true;
-            if (p_keyboardCurrent != null) Devices.Patched.Add("Keyboard"); else Devices.Missed.Add("Keyboard");
-            if (p_mouseCurrent != null) Devices.Patched.Add("Mouse"); else Devices.Missed.Add("Mouse");
-        }
-
-        /// <summary>
-        /// Find DisableDevice/EnableDevice by name and first parameter, never by exact signature.
-        /// </summary>
-        /// <remarks>
-        /// ⚠ Asking for the exact signature (InputDevice) finds nothing on a current Input System:
-        /// these methods gained an optional second parameter (keepSendingEvents) along the way, and
-        /// reflection does not apply defaults when matching. That miss is what made a game with a
-        /// perfectly working Input System report "does not expose device enabling".
-        /// </remarks>
-        static MethodInfo FindDeviceMethod(string name, Type device)
-        {
-            try
-            {
-                foreach (var m in t_InputSystem.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                try
                 {
-                    if (m.Name != name) continue;
-
-                    var ps = m.GetParameters();
-                    if (ps.Length == 0) continue;
-
-                    // When the type resolved, insist on it; otherwise take the name's word for it
-                    // rather than refusing to work at all.
-                    if (device != null && !ps[0].ParameterType.IsAssignableFrom(device)) continue;
-
-                    return m;
+                    s.Probe();
                 }
-            }
-            catch (Exception ex)
-            {
-                Universe.LogWarning($"[InputCapture] Looking up {name} failed: {ex.Message}");
-            }
-            return null;
-        }
+                catch (Exception ex)
+                {
+                    // A strategy that throws while probing is simply unavailable — but say so:
+                    // silently dropping it would look exactly like a game that cannot be captured.
+                    Universe.LogWarning($"[InputCapture] {s.Name} failed to probe: {ex}");
+                }
 
-        /// <summary>Arguments for a device method: the device, then whatever defaults follow.</summary>
-        static object[] ArgsFor(MethodInfo method, object device)
-        {
-            var ps = method.GetParameters();
-            var args = new object[ps.Length];
-            args[0] = device;
-            for (int i = 1; i < ps.Length; i++)
-            {
-                // IsOptional/DefaultValue rather than HasDefaultValue: the Mono build of this
-                // library targets net35, where the latter does not exist.
-                object given = ps[i].IsOptional ? ps[i].DefaultValue : null;
-                if (given == null || given == DBNull.Value)
-                    given = ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null;
-                args[i] = given;
+                Universe.Log($"[InputCapture] {s.Name}: "
+                    + (s.Available
+                        ? $"usable ({string.Join(", ", s.Hooked.ToArray())})"
+                            + (s.Missed.Count > 0 ? $"; out of reach: {string.Join(", ", s.Missed.ToArray())}" : "")
+                        : $"unusable — {s.Reason}"));
             }
-            return args;
-        }
 
-        static object Current(PropertyInfo p)
-        {
-            try { return p == null ? null : p.GetValue(null, null); } catch { return null; }
-        }
-
-        static bool SetDevice(PropertyInfo current, bool disable)
-        {
-            object dev = Current(current);
-            if (dev == null)
-                return false;
-
-            try
+            foreach (var kind in AllKinds)
             {
-                var method = disable ? m_disableDevice : m_enableDevice;
-                method.Invoke(null, ArgsFor(method, dev));
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Universe.LogWarning($"[InputCapture] Could not {(disable ? "disable" : "enable")} an Input System device: {ex.Message}");
-                return false;
+                if (!CanCapture(kind))
+                    Universe.Log($"[InputCapture] {kind} cannot be captured here — {WhyNot(kind)}");
             }
         }
 
-        /// <summary>
-        /// Bring the Input System devices in line with what is wanted. Called once per frame.
-        /// </summary>
-        /// <remarks>
-        /// Driven by comparing state rather than by reacting to an event, on purpose: a device the
-        /// game re-enables itself, or one plugged in mid-session, is brought back in line on the
-        /// next frame instead of staying wrong until something happens to fire again.
-        /// </remarks>
         internal static void Tick()
         {
-            if (!Devices.Available)
-                return;
-
-            bool wantKeyboard = WantsQuiet(CaptureKind.Keyboard);
-            // One device carries both, so either intent claims it. Both asked explicitly rather
-            // than through || — short-circuiting would leave MouseAxes unasked and reading as
-            // "the game never called it" whenever buttons were wanted too.
-            bool wantButtons = WantsQuiet(CaptureKind.MouseButtons);
-            bool wantAxes = WantsQuiet(CaptureKind.MouseAxes);
-            bool wantMouse = wantButtons || wantAxes;
-
-            if (wantKeyboard || wantMouse)
-                Devices.Asked++;
-
-            if (wantKeyboard != keyboardDisabled && SetDevice(p_keyboardCurrent, wantKeyboard))
+            foreach (var s in _strategies)
             {
-                keyboardDisabled = wantKeyboard;
-                if (wantKeyboard) Devices.Silenced++;
-            }
-
-            if (wantMouse != mouseDisabled && SetDevice(p_mouseCurrent, wantMouse))
-            {
-                mouseDisabled = wantMouse;
-                if (wantMouse) Devices.Silenced++;
+                if (!s.Available) continue;
+                try { s.Tick(); }
+                catch (Exception ex) { Universe.LogWarning($"[InputCapture] {s.Name} tick failed: {ex.Message}"); }
             }
         }
 
         /// <summary>
-        /// Hand every device back. A game left with its keyboard disabled is unplayable, and
-        /// nothing else would ever put that right.
+        /// Give everything back. A game left with its keyboard disabled is unplayable, and nothing
+        /// else would ever put that right — call this on shutdown.
         /// </summary>
-        public static void ReleaseDevices()
+        public static void ReleaseAll()
         {
-            if (keyboardDisabled && SetDevice(p_keyboardCurrent, false)) keyboardDisabled = false;
-            if (mouseDisabled && SetDevice(p_mouseCurrent, false)) mouseDisabled = false;
+            foreach (var s in _strategies)
+            {
+                try { s.Release(); }
+                catch (Exception ex) { Universe.LogWarning($"[InputCapture] {s.Name} release failed: {ex.Message}"); }
+            }
         }
 
+        /// <summary>Forget the counters, so the next report covers one episode only.</summary>
+        public static void ResetActivity()
+        {
+            foreach (var s in _strategies)
+                s.ResetActivity();
+        }
+
+        /// <summary>One line per strategy: what each managed since the last reset.</summary>
+        public static string DescribeActivity()
+        {
+            var parts = new List<string>();
+            foreach (var s in _strategies)
+                parts.Add($"{s.Name}: {s.Describe()}");
+            return string.Join(" | ", parts.ToArray());
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Strategy 1 — patch the legacy Input API
+        // ─────────────────────────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Wrap our own input module's frame in <see cref="Bypass"/>, so the menu keeps receiving
-        /// the clicks and keys it captured from the game.
+        /// Makes UnityEngine.Input answer "nothing pressed" while a UI asks for it.
         /// </summary>
         /// <remarks>
-        /// The module reads UnityEngine.Input from inside Unity's own code — there is no call of
-        /// ours to wrap, hence patching Process. The instance check matters: the game very likely
-        /// runs a StandaloneInputModule of its own, and bypassing during ITS frame would hand back
-        /// exactly the input we were asked to take.
+        /// ⚠ Several members of UnityEngine.Input are InternalCall and so have no IL body Harmony
+        /// could patch — and WHICH ones varies by runtime, Unity version and stripping. Measured:
+        /// GetAxis and GetMouseButton* are out of reach on Mono but patchable on IL2CPP, and a
+        /// game that never calls GetKeyUp has it stripped away entirely. Hence probing rather than
+        /// assuming, per method, with what was reached kept in <see cref="Strategy.Hooked"/>.
         /// </remarks>
-        static void PatchOwnInputModule()
+        class LegacyPatchStrategy : Strategy
         {
-            var module = ReflectionUtility.GetTypeByName("UnityEngine.EventSystems.StandaloneInputModule");
-            if (module == null)
+            public override string Name { get { return "Legacy patches"; } }
+
+            bool keys, buttons, axes;
+
+            public override bool Serves(CaptureKind kind)
             {
-                Universe.Log("[InputCapture] No StandaloneInputModule type — menu input protection not installed");
-                return;
+                switch (kind)
+                {
+                    case CaptureKind.Keyboard: return keys;
+                    case CaptureKind.MouseButtons: return buttons;
+                    case CaptureKind.MouseAxes: return axes;
+                    default: return false;
+                }
             }
 
-            bool ok = Universe.Patch(module, "Process", MethodType.Normal, Type.EmptyTypes,
-                prefix: AccessTools.Method(typeof(InputCapture), nameof(Prefix_Module_Process)),
-                finalizer: AccessTools.Method(typeof(InputCapture), nameof(Finalizer_Module_Process)));
+            public override void Probe()
+            {
+                Type input = ReflectionUtility.GetTypeByName("UnityEngine.Input");
+                if (input == null)
+                {
+                    Reason = "This game does not use Unity's legacy Input.";
+                    return;
+                }
 
-            // Not fatal on its own: with nothing capturable there is nothing to protect from. It is
-            // only alarming when a capture IS available, so say so at the level that matches.
-            if (!ok && (Keyboard.Available || MouseButtons.Available))
-                Universe.LogWarning("[InputCapture] Could not protect the menu's own input module — "
-                    + "capturing may make the menu unresponsive on this game.");
+                keys = TryPatch(input, "GetKey", typeof(KeyCode), nameof(Postfix_Bool))
+                     | TryPatch(input, "GetKey", typeof(string), nameof(Postfix_Bool))
+                     | TryPatch(input, "GetKeyDown", typeof(KeyCode), nameof(Postfix_Bool))
+                     | TryPatch(input, "GetKeyDown", typeof(string), nameof(Postfix_Bool))
+                     | TryPatch(input, "GetKeyUp", typeof(KeyCode), nameof(Postfix_Bool))
+                     | TryPatch(input, "GetKeyUp", typeof(string), nameof(Postfix_Bool));
+
+                buttons = TryPatch(input, "GetMouseButton", typeof(int), nameof(Postfix_Bool))
+                        | TryPatch(input, "GetMouseButtonDown", typeof(int), nameof(Postfix_Bool))
+                        | TryPatch(input, "GetMouseButtonUp", typeof(int), nameof(Postfix_Bool));
+
+                axes = TryPatch(input, "GetAxis", typeof(string), nameof(Postfix_Axis))
+                     | TryPatch(input, "GetAxisRaw", typeof(string), nameof(Postfix_Axis));
+
+                Available = keys || buttons || axes;
+                if (!Available)
+                    Reason = "None of this game's legacy input methods can be intercepted.";
+
+                ProtectOwnInputModule();
+            }
+
+            bool TryPatch(Type type, string method, Type arg, string postfixName)
+            {
+                var postfix = AccessTools.Method(typeof(InputCapture), postfixName);
+                bool ok = Universe.Patch(type, method, MethodType.Normal, new Type[] { arg }, postfix: postfix);
+
+                string label = $"{method}({arg.Name})";
+                if (ok) Hooked.Add(label); else Missed.Add(label);
+                return ok;
+            }
+
+            /// <summary>
+            /// Wrap our own input module's frame in <see cref="Bypass"/>, so the menu keeps the
+            /// clicks and keys it took from the game.
+            /// </summary>
+            /// <remarks>
+            /// The module reads UnityEngine.Input from inside Unity's own code — there is no call
+            /// of ours to wrap, hence patching Process. The instance check matters: the game very
+            /// likely runs a StandaloneInputModule of its own, and bypassing during ITS frame
+            /// would hand back exactly the input we were asked to take.
+            /// </remarks>
+            void ProtectOwnInputModule()
+            {
+                var module = ReflectionUtility.GetTypeByName("UnityEngine.EventSystems.StandaloneInputModule");
+                if (module == null)
+                    return;
+
+                bool ok = Universe.Patch(module, "Process", MethodType.Normal, Type.EmptyTypes,
+                    prefix: AccessTools.Method(typeof(InputCapture), nameof(Prefix_Module_Process)),
+                    finalizer: AccessTools.Method(typeof(InputCapture), nameof(Finalizer_Module_Process)));
+
+                if (!ok && Available)
+                    Universe.LogWarning("[InputCapture] Could not protect the menu's own input module — "
+                        + "capturing may make the menu unresponsive on this game.");
+            }
+        }
+
+        /// <summary>The legacy strategy, for the postfixes to report into.</summary>
+        static Strategy Legacy
+        {
+            get { return _strategies.Count > 0 ? _strategies[0] : null; }
+        }
+
+        /// <summary>Applied to GetKey* and GetMouseButton*: report nothing pressed while captured.</summary>
+        public static void Postfix_Bool(ref bool __result, MethodBase __originalMethod)
+        {
+            if (!__result)
+                return;
+
+            CaptureKind kind = __originalMethod.Name.StartsWith("GetMouse")
+                ? CaptureKind.MouseButtons
+                : CaptureKind.Keyboard;
+
+            if (Wants(kind, true))
+            {
+                __result = false;
+                var s = Legacy;
+                if (s != null) s.Silenced++;
+            }
+        }
+
+        /// <summary>
+        /// Applied to GetAxis/GetAxisRaw: flatten the MOUSE axes only.
+        /// </summary>
+        /// <remarks>
+        /// Never every axis: these two also carry "Horizontal", "Vertical" and whatever the game
+        /// named its own, and zeroing those would freeze a gamepad and the movement keys through a
+        /// door nobody opened. The mouse axes are the ones an open menu has a claim on.
+        /// </remarks>
+        public static void Postfix_Axis(ref float __result, string __0)
+        {
+            if (__result == 0f || __0 == null)
+                return;
+
+            // Unity's own are "Mouse X", "Mouse Y", "Mouse ScrollWheel"; games rename them rarely
+            // and keep the word, so match on it rather than on an exact list.
+            if (__0.IndexOf("Mouse", StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+
+            if (Wants(CaptureKind.MouseAxes, true))
+            {
+                __result = 0f;
+                var s = Legacy;
+                if (s != null) s.Silenced++;
+            }
         }
 
         /// <summary>Bypass while OUR module processes; a finalizer clears it whatever happens.</summary>
         public static void Prefix_Module_Process(object __instance)
         {
-            if (InputManager.inputHandler is LegacyInput legacy
-                && legacy.inputModule != null
-                && ReferenceEquals(legacy.inputModule, __instance))
-            {
+            var legacy = InputManager.inputHandler as LegacyInput;
+            if (legacy != null && legacy.inputModule != null && ReferenceEquals(legacy.inputModule, __instance))
                 Bypass = true;
-            }
         }
 
         /// <summary>
@@ -544,50 +443,194 @@ namespace UniverseLib.Input
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
-        // Prefixes — postfixes, in fact: the game's own call still runs, only its ANSWER is
-        // replaced. Suppressing the call itself would skip Unity's internal bookkeeping for a
-        // frame, and some input backends notice.
+        // Strategy 2 — take the Input System's devices
         // ─────────────────────────────────────────────────────────────────────────────
 
-        /// <summary>Applied to GetKey* and GetMouseButton*: report nothing pressed while captured.</summary>
-        public static void Postfix_Bool(ref bool __result, MethodBase __originalMethod)
-        {
-            if (!__result)
-                return;
-
-            CaptureKind kind = __originalMethod.Name.StartsWith("GetMouse")
-                ? CaptureKind.MouseButtons
-                : CaptureKind.Keyboard;
-
-            if (Wants(kind))
-            {
-                __result = false;
-                Of(kind).Silenced++;
-            }
-        }
-
         /// <summary>
-        /// Applied to GetAxis/GetAxisRaw: flatten the MOUSE axes only.
+        /// Disables the Input System's keyboard and mouse while a UI asks for them.
         /// </summary>
         /// <remarks>
-        /// Never every axis: these two also carry "Horizontal", "Vertical" and whatever the game
-        /// named its own, and zeroing those would freeze a gamepad and a keyboard's movement keys
-        /// through a door nobody opened. The mouse axes are the ones an open menu has a claim on.
+        /// The patches above cannot reach a game on the Input System: it never calls
+        /// UnityEngine.Input, so they watch a road nobody drives on. Measured on one reading
+        /// everything that way — every legacy hook reported "the game never came through it" while
+        /// its camera kept turning under an open menu.
+        ///
+        /// ⚠ Coarser than the legacy side, irreducibly: a mouse is one device, so its buttons and
+        /// its movement come and go together.
         /// </remarks>
-        public static void Postfix_Axis(ref float __result, string __0)
+        class InputSystemDeviceStrategy : Strategy
         {
-            if (__result == 0f || __0 == null)
-                return;
+            public override string Name { get { return "Input System devices"; } }
 
-            // Unity's own names are "Mouse X", "Mouse Y" and "Mouse ScrollWheel"; games rename them
-            // rarely and always keeping the word, so match on it rather than on an exact list.
-            if (__0.IndexOf("Mouse", StringComparison.OrdinalIgnoreCase) < 0)
-                return;
+            MethodInfo m_disable, m_enable;
+            PropertyInfo p_keyboard, p_mouse;
+            bool keyboardTaken, mouseTaken;
 
-            if (Wants(CaptureKind.MouseAxes))
+            public override bool Serves(CaptureKind kind)
             {
-                __result = 0f;
-                MouseAxes.Silenced++;
+                switch (kind)
+                {
+                    case CaptureKind.Keyboard: return p_keyboard != null;
+                    case CaptureKind.MouseButtons:
+                    case CaptureKind.MouseAxes: return p_mouse != null;
+                    default: return false;
+                }
+            }
+
+            public override void Probe()
+            {
+                Type system = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputSystem");
+                if (system == null)
+                {
+                    Reason = "This game does not use Unity's Input System package.";
+                    return;
+                }
+
+                // ⚠ Refused when UniverseLib reads through the Input System as well: disabling
+                // those devices would take the menu's own keyboard and mouse along with the game's,
+                // leaving a window that cannot be clicked or closed. Better to do nothing, and say
+                // why, than to make the mod unusable on those games.
+                if (InputManager.CurrentType == InputType.InputSystem)
+                {
+                    Reason = "The menu itself reads through the Input System here; "
+                        + "taking those devices would make it unusable.";
+                    return;
+                }
+
+                p_keyboard = PropertyOf("UnityEngine.InputSystem.Keyboard");
+                p_mouse = PropertyOf("UnityEngine.InputSystem.Mouse");
+
+                Type device = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputDevice");
+                m_disable = FindDeviceMethod(system, "DisableDevice", device);
+                m_enable = FindDeviceMethod(system, "EnableDevice", device);
+
+                if (m_disable == null || m_enable == null || (p_keyboard == null && p_mouse == null))
+                {
+                    // Name what is missing. "Does not expose device enabling" once sent us looking
+                    // at the game when the fault was a signature we had asked for too precisely.
+                    var missing = new List<string>();
+                    if (m_disable == null) missing.Add("InputSystem.DisableDevice");
+                    if (m_enable == null) missing.Add("InputSystem.EnableDevice");
+                    if (p_keyboard == null && p_mouse == null) missing.Add("Keyboard.current / Mouse.current");
+                    Reason = "This game's Input System is missing " + string.Join(", ", missing.ToArray()) + ".";
+                    return;
+                }
+
+                Available = true;
+                if (p_keyboard != null) Hooked.Add("Keyboard"); else Missed.Add("Keyboard");
+                if (p_mouse != null) Hooked.Add("Mouse"); else Missed.Add("Mouse");
+            }
+
+            static PropertyInfo PropertyOf(string typeName)
+            {
+                Type t = ReflectionUtility.GetTypeByName(typeName);
+                return t == null ? null : t.GetProperty("current");
+            }
+
+            /// <summary>
+            /// Find the device methods by name and first parameter, never by exact signature.
+            /// </summary>
+            /// <remarks>
+            /// ⚠ Asking for the exact signature (InputDevice) finds nothing on a current Input
+            /// System: these gained an optional second parameter along the way, and reflection does
+            /// not apply defaults when matching. That miss made a game with a perfectly working
+            /// Input System report itself as not exposing device enabling at all.
+            /// </remarks>
+            static MethodInfo FindDeviceMethod(Type system, string name, Type device)
+            {
+                foreach (var m in system.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                {
+                    if (m.Name != name) continue;
+
+                    var ps = m.GetParameters();
+                    if (ps.Length == 0) continue;
+
+                    // When the type resolved, insist on it; otherwise take the name's word for it
+                    // rather than refusing to work at all.
+                    if (device != null && !ps[0].ParameterType.IsAssignableFrom(device)) continue;
+
+                    return m;
+                }
+                return null;
+            }
+
+            /// <summary>
+            /// Bring the devices in line with what is wanted. Called every frame.
+            /// </summary>
+            /// <remarks>
+            /// Driven by comparing state rather than by reacting to an event, on purpose: a device
+            /// the game re-enables itself, or one plugged in mid-session, is brought back in line
+            /// on the next frame instead of staying wrong until something happens to fire again.
+            /// </remarks>
+            public override void Tick()
+            {
+                // Asked without counting: this is our own polling, not the game reading anything.
+                bool wantKeyboard = Wants(CaptureKind.Keyboard, false);
+                // One device carries both, and both are asked explicitly — a || short-circuit
+                // would leave MouseAxes permanently unasked whenever buttons were wanted too.
+                bool wantButtons = Wants(CaptureKind.MouseButtons, false);
+                bool wantAxes = Wants(CaptureKind.MouseAxes, false);
+                bool wantMouse = wantButtons || wantAxes;
+
+                if (wantKeyboard || wantMouse)
+                    Asked++;
+
+                if (wantKeyboard != keyboardTaken && Set(p_keyboard, wantKeyboard))
+                {
+                    keyboardTaken = wantKeyboard;
+                    if (wantKeyboard) Silenced++;
+                }
+
+                if (wantMouse != mouseTaken && Set(p_mouse, wantMouse))
+                {
+                    mouseTaken = wantMouse;
+                    if (wantMouse) Silenced++;
+                }
+            }
+
+            public override void Release()
+            {
+                if (keyboardTaken && Set(p_keyboard, false)) keyboardTaken = false;
+                if (mouseTaken && Set(p_mouse, false)) mouseTaken = false;
+            }
+
+            bool Set(PropertyInfo current, bool take)
+            {
+                object dev = null;
+                try { if (current != null) dev = current.GetValue(null, null); }
+                catch { }
+                if (dev == null)
+                    return false;
+
+                try
+                {
+                    var method = take ? m_disable : m_enable;
+                    method.Invoke(null, ArgsFor(method, dev));
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Universe.LogWarning($"[InputCapture] Could not {(take ? "take" : "return")} an Input System device: {ex.Message}");
+                    return false;
+                }
+            }
+
+            /// <summary>The device, then whatever defaults follow it.</summary>
+            static object[] ArgsFor(MethodInfo method, object device)
+            {
+                var ps = method.GetParameters();
+                var args = new object[ps.Length];
+                args[0] = device;
+                for (int i = 1; i < ps.Length; i++)
+                {
+                    // IsOptional/DefaultValue rather than HasDefaultValue: the Mono build of this
+                    // library targets net35, where the latter does not exist.
+                    object given = ps[i].IsOptional ? ps[i].DefaultValue : null;
+                    if (given == null || given == DBNull.Value)
+                        given = ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null;
+                    args[i] = given;
+                }
+                return args;
             }
         }
     }
