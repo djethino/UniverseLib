@@ -132,6 +132,21 @@ namespace UniverseLib.Input
         /// </remarks>
         internal static bool Bypass { get; set; }
 
+        /// <summary>
+        /// Set by the consumer around ITS OWN reads and raycasts into the game. Nothing is captured
+        /// while it is on.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ The counterpart of <see cref="Bypass"/>, for the layer above. Capture means "the game
+        /// gets nothing", but a mod that inspects the game — highlighting what sits under the
+        /// cursor, letting someone pick an element — has to raycast INTO it, through the very
+        /// raycasters this class is busy silencing. Without a way to step aside, turning capture on
+        /// would blind every inspection tool the consumer has.
+        ///
+        /// Always in a try/finally: left on, it silently disables every capture for the session.
+        /// </remarks>
+        public static bool ConsumerReading { get; set; }
+
         /// <summary>Is that intention obtainable on this game, by any means?</summary>
         public static bool CanCapture(CaptureKind kind)
         {
@@ -166,7 +181,7 @@ namespace UniverseLib.Input
 
         static bool Wants(CaptureKind kind, bool count)
         {
-            if (Bypass)
+            if (Bypass || ConsumerReading)
                 return false;
 
             var ask = ShouldCapture;
