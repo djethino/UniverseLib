@@ -41,15 +41,25 @@ namespace UniverseLib.Input
         {
             /// <summary>Keys.</summary>
             Keyboard,
-            /// <summary>Mouse buttons.</summary>
-            MouseButtons,
+            /// <summary>The game's own menus and buttons — its pointer raycasts.</summary>
+            GameMenus,
+            /// <summary>Clicks the game reads for itself — shooting, interacting, dragging.</summary>
+            GameClicks,
             /// <summary>Mouse movement axes — the first-person camera.</summary>
             MouseAxes,
         }
 
+        // ⚠ GameMenus and GameClicks were ONE kind, "MouseButtons", and that was a conflation
+        // rather than a simplification: they do not even travel the same way. A menu is reached by
+        // a RAYCAST, which UiRaycastStrategy steps out of; a gameplay click is a READ of
+        // GetMouseButton, which the three other strategies intercept. Merged, wanting the game's
+        // menus back also handed it every click — so clicking beside our window fired a weapon.
+        // Split, "freeze the view but let me use the game's menu" is a combination rather than a
+        // feature, and each half greys out with its own reason.
+
         static readonly CaptureKind[] AllKinds =
         {
-            CaptureKind.Keyboard, CaptureKind.MouseButtons, CaptureKind.MouseAxes
+            CaptureKind.Keyboard, CaptureKind.GameMenus, CaptureKind.GameClicks, CaptureKind.MouseAxes
         };
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -367,7 +377,7 @@ namespace UniverseLib.Input
                 switch (kind)
                 {
                     case CaptureKind.Keyboard: return keys;
-                    case CaptureKind.MouseButtons: return buttons;
+                    case CaptureKind.GameClicks: return buttons;
                     case CaptureKind.MouseAxes: return axes;
                     default: return false;
                 }
@@ -466,7 +476,7 @@ namespace UniverseLib.Input
                 return;
 
             CaptureKind kind = __originalMethod.Name.StartsWith("GetMouse")
-                ? CaptureKind.MouseButtons
+                ? CaptureKind.GameClicks
                 : CaptureKind.Keyboard;
 
             if (Wants(kind, Legacy))
@@ -565,10 +575,11 @@ namespace UniverseLib.Input
 
             public override bool Serves(CaptureKind kind)
             {
-                // Clicks only. It says nothing about keys, and nothing about mouse MOVEMENT: a
-                // raycast is not consulted for a camera turning, so claiming those would grey in
-                // an option that does nothing.
-                return kind == CaptureKind.MouseButtons;
+                // The game's MENUS only, and nothing else. Not keys; not mouse MOVEMENT, since a
+                // raycast is not consulted for a camera turning; and not the game's own clicks
+                // either, which are reads it makes for itself and never a raycast. Claiming any of
+                // those would grey in an option that does nothing.
+                return kind == CaptureKind.GameMenus;
             }
 
             public override void Probe()
@@ -672,7 +683,7 @@ namespace UniverseLib.Input
         /// Answers whether the consumer's interface currently owns the pointer.
         /// </summary>
         /// <remarks>
-        /// ⚠ Deliberately NOT tied to <see cref="CaptureKind.MouseButtons"/>, and that distinction
+        /// ⚠ Deliberately NOT tied to <see cref="CaptureKind.GameClicks"/>, and that distinction
         /// is the whole point.
         ///
         /// A game that reads the mouse itself asks this before acting, so as not to fire a click
@@ -765,7 +776,7 @@ namespace UniverseLib.Input
                 }
             }
 
-            if (!Wants(CaptureKind.MouseButtons, Raycasts, honourBypass: false))
+            if (!Wants(CaptureKind.GameMenus, Raycasts, honourBypass: false))
             {
                 if (narrate) Narrate(__instance, "NOT captured, let through");
                 return true;
@@ -809,7 +820,7 @@ namespace UniverseLib.Input
             {
                 // Buttons and keys only. Mouse MOVEMENT is a Vector2 control read through a
                 // different path, and claiming it here would grey in an option that does nothing.
-                return buttons && (kind == CaptureKind.Keyboard || kind == CaptureKind.MouseButtons);
+                return buttons && (kind == CaptureKind.Keyboard || kind == CaptureKind.GameClicks);
             }
 
             public override void Probe()
@@ -862,7 +873,7 @@ namespace UniverseLib.Input
             if (!__result)
                 return;
 
-            CaptureKind kind = LooksLikeKey(__instance) ? CaptureKind.Keyboard : CaptureKind.MouseButtons;
+            CaptureKind kind = LooksLikeKey(__instance) ? CaptureKind.Keyboard : CaptureKind.GameClicks;
 
             if (Wants(kind, InputSystemReads))
             {
@@ -916,7 +927,7 @@ namespace UniverseLib.Input
                 switch (kind)
                 {
                     case CaptureKind.Keyboard: return p_keyboard != null;
-                    case CaptureKind.MouseButtons:
+                    case CaptureKind.GameClicks:
                     case CaptureKind.MouseAxes: return p_mouse != null;
                     default: return false;
                 }
@@ -1013,7 +1024,7 @@ namespace UniverseLib.Input
                 bool wantKeyboard = Wants(CaptureKind.Keyboard, null);
                 // One device carries both, and both are asked explicitly — a || short-circuit
                 // would leave MouseAxes permanently unasked whenever buttons were wanted too.
-                bool wantButtons = Wants(CaptureKind.MouseButtons, null);
+                bool wantButtons = Wants(CaptureKind.GameClicks, null);
                 bool wantAxes = Wants(CaptureKind.MouseAxes, null);
                 bool wantMouse = wantButtons || wantAxes;
 
