@@ -43,6 +43,41 @@ namespace UniverseLib.Input
 
             /// <summary>Methods that could not be patched, with the reason each failed.</summary>
             public List<string> Missed { get; } = new List<string>();
+
+            /// <summary>Times the game asked, while capture was on. Zero means it reads elsewhere.</summary>
+            public int Asked { get; internal set; }
+
+            /// <summary>Times an answer was actually replaced.</summary>
+            public int Silenced { get; internal set; }
+
+            /// <summary>
+            /// What happened, in one line — the only way to tell "the game reads through another
+            /// API" from "the capture never armed", which look identical from the outside.
+            /// </summary>
+            public string Describe()
+            {
+                if (!Available) return $"unavailable ({Reason})";
+                if (Asked == 0) return "patched, but the game never called it — it reads input through another API";
+                return $"{Silenced}/{Asked} reads silenced";
+            }
+
+            internal void ResetActivity() { Asked = 0; Silenced = 0; }
+        }
+
+        /// <summary>Forget the per-session counters, so the next report covers one episode only.</summary>
+        public static void ResetActivity()
+        {
+            foreach (var pair in Capabilities)
+                pair.Value.ResetActivity();
+        }
+
+        /// <summary>One line per capability: what it managed to do since the last reset.</summary>
+        public static string DescribeActivity()
+        {
+            var parts = new List<string>();
+            foreach (var pair in Capabilities)
+                parts.Add($"{pair.Key}: {pair.Value.Describe()}");
+            return string.Join(" | ", parts.ToArray());
         }
 
         /// <summary>Keys: Input.GetKey / GetKeyDown / GetKeyUp.</summary>
@@ -102,6 +137,16 @@ namespace UniverseLib.Input
         /// </remarks>
         internal static bool Bypass { get; set; }
 
+        static Capability Of(CaptureKind kind)
+        {
+            switch (kind)
+            {
+                case CaptureKind.MouseButtons: return MouseButtons;
+                case CaptureKind.MouseAxes: return MouseAxes;
+                default: return Keyboard;
+            }
+        }
+
         static bool Wants(CaptureKind kind)
         {
             if (Bypass)
@@ -113,7 +158,11 @@ namespace UniverseLib.Input
 
             try
             {
-                return ask(kind);
+                bool wanted = ask(kind);
+                // Counted only while capture is ON, so "asked 0 times" reads as "the game never
+                // came through here while we held the input" — never as "nobody opened a panel".
+                if (wanted) Of(kind).Asked++;
+                return wanted;
             }
             catch (Exception ex)
             {
@@ -294,7 +343,10 @@ namespace UniverseLib.Input
                 : CaptureKind.Keyboard;
 
             if (Wants(kind))
+            {
                 __result = false;
+                Of(kind).Silenced++;
+            }
         }
 
         /// <summary>
@@ -316,7 +368,10 @@ namespace UniverseLib.Input
                 return;
 
             if (Wants(CaptureKind.MouseAxes))
+            {
                 __result = 0f;
+                MouseAxes.Silenced++;
+            }
         }
     }
 }
