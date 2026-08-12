@@ -252,6 +252,8 @@ namespace UniverseLib.Input
             _strategies.Add(_legacy);
             _strategies.Add(new InputSystemDeviceStrategy());
             _strategies.Add(_raycasts);
+            _isReads = new InputSystemReadStrategy();
+            _strategies.Add(_isReads);
 
             foreach (var s in _strategies)
             {
@@ -566,9 +568,42 @@ namespace UniverseLib.Input
                 Hook("UnityEngine.EventSystems.PhysicsRaycaster", prefix);
                 Hook("UnityEngine.EventSystems.Physics2DRaycaster", prefix);
 
+                HookPointerOverUI();
+
                 Available = Hooked.Count > 0;
                 if (!Available)
                     Reason = "This game has no raycaster this mod can step out of.";
+            }
+
+            /// <summary>
+            /// Also answer "the pointer is over UI" while clicks are being captured.
+            /// </summary>
+            /// <remarks>
+            /// A game that reads the mouse itself — through the Input System, say, which cannot be
+            /// taken from it when the menu reads there too — usually still asks this before acting,
+            /// precisely so it does not fire a click that belonged to an interface. Silencing the
+            /// raycasters is what makes it answer "no" the instant our window goes away, which is
+            /// how a click on a close button ends up reaching what was behind it.
+            ///
+            /// Saying "yes" here is not a lie: the pointer IS over an interface — ours.
+            /// </remarks>
+            void HookPointerOverUI()
+            {
+                Type es = ReflectionUtility.GetTypeByName("UnityEngine.EventSystems.EventSystem");
+                if (es == null)
+                    return;
+
+                var postfix = AccessTools.Method(typeof(InputCapture), nameof(Postfix_IsPointerOverGameObject));
+
+                if (Universe.Patch(es, "IsPointerOverGameObject", MethodType.Normal, Type.EmptyTypes, postfix: postfix))
+                    Hooked.Add("IsPointerOverGameObject()");
+                else
+                    Missed.Add("IsPointerOverGameObject()");
+
+                if (Universe.Patch(es, "IsPointerOverGameObject", MethodType.Normal, new Type[] { typeof(int) }, postfix: postfix))
+                    Hooked.Add("IsPointerOverGameObject(int)");
+                else
+                    Missed.Add("IsPointerOverGameObject(int)");
             }
 
             void Hook(string typeName, MethodInfo prefix)
@@ -618,6 +653,18 @@ namespace UniverseLib.Input
                 else
                     Missed.Add(label);
             }
+        }
+
+        /// <summary>
+        /// While clicks are ours, the pointer counts as being over an interface — because it is.
+        /// </summary>
+        public static void Postfix_IsPointerOverGameObject(ref bool __result)
+        {
+            if (__result)
+                return;
+
+            if (Wants(CaptureKind.MouseButtons, Raycasts, honourBypass: false))
+                __result = true;
         }
 
         /// <summary>The raycast strategy, for the prefix to report into.</summary>
@@ -679,6 +726,117 @@ namespace UniverseLib.Input
             return false;
         }
 
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Strategy 5 — intercept what the Input System reports, without taking its devices
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Makes the Input System's buttons and keys report "not pressed" while a UI holds them.
+        /// </summary>
+        /// <remarks>
+        /// The device strategy has to refuse whenever the menu reads through the Input System too,
+        /// because disabling a device takes it from everyone. Patching the READS does not: the same
+        /// Bypass that already excuses UniverseLib on the legacy side excuses it here, so the menu
+        /// keeps its input while the game loses it.
+        ///
+        /// Measured need: a game where every raycaster was blocked (1025 of 1061) and
+        /// IsPointerOverGameObject patched, and whose menu button was pressed anyway by a click on
+        /// our close button — it reads the mouse itself and does its own hit test, so nothing that
+        /// works through Unity's UI can reach it.
+        ///
+        /// ⚠ KeyControl derives from ButtonControl, so one hook covers keys as well as mouse
+        /// buttons — which is also why this must respect the per-kind intention rather than
+        /// blanket-blocking.
+        /// </remarks>
+        class InputSystemReadStrategy : Strategy
+        {
+            public override string Name { get { return "Input System reads"; } }
+
+            bool buttons;
+
+            public override bool Serves(CaptureKind kind)
+            {
+                // Buttons and keys only. Mouse MOVEMENT is a Vector2 control read through a
+                // different path, and claiming it here would grey in an option that does nothing.
+                return buttons && (kind == CaptureKind.Keyboard || kind == CaptureKind.MouseButtons);
+            }
+
+            public override void Probe()
+            {
+                Type btn = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Controls.ButtonControl");
+                if (btn == null)
+                {
+                    Reason = "This game does not use Unity's Input System package.";
+                    return;
+                }
+
+                var postfix = AccessTools.Method(typeof(InputCapture), nameof(Postfix_ButtonControl));
+
+                Hook(btn, "isPressed", postfix);
+                Hook(btn, "wasPressedThisFrame", postfix);
+                Hook(btn, "wasReleasedThisFrame", postfix);
+
+                buttons = Hooked.Count > 0;
+                Available = buttons;
+                if (!Available)
+                    Reason = "This game's Input System does not expose readable button state.";
+            }
+
+            void Hook(Type type, string property, MethodInfo postfix)
+            {
+                if (Universe.Patch(type, property, MethodType.Getter, Type.EmptyTypes, postfix: postfix))
+                    Hooked.Add(property);
+                else
+                    Missed.Add(property);
+            }
+        }
+
+        /// <summary>The Input System read strategy, for its postfix to report into.</summary>
+        static Strategy _isReads;
+        static Strategy InputSystemReads { get { return _isReads; } }
+
+        /// <summary>
+        /// A button or key the game asks about, while that kind of input is ours.
+        /// </summary>
+        /// <remarks>
+        /// Bypass IS honoured here, unlike the raycast prefix: this is a read of an input API that
+        /// cannot tell who is asking, exactly like the legacy one — and UniverseLib reads these
+        /// constantly, for the consumer's hotkeys and inside its own input module.
+        ///
+        /// A key and a mouse button are the same type here, so the intention is decided by what the
+        /// control belongs to: anything under the keyboard counts as a key, the rest as a button.
+        /// </remarks>
+        public static void Postfix_ButtonControl(object __instance, ref bool __result)
+        {
+            if (!__result)
+                return;
+
+            CaptureKind kind = LooksLikeKey(__instance) ? CaptureKind.Keyboard : CaptureKind.MouseButtons;
+
+            if (Wants(kind, InputSystemReads))
+            {
+                __result = false;
+                if (InputSystemReads != null) InputSystemReads.Silenced++;
+            }
+        }
+
+        static Type t_keyControl;
+        static bool t_keyControlSearched;
+
+        static bool LooksLikeKey(object control)
+        {
+            if (control == null)
+                return false;
+
+            if (!t_keyControlSearched)
+            {
+                t_keyControlSearched = true;
+                t_keyControl = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.Controls.KeyControl");
+            }
+
+            return t_keyControl != null && t_keyControl.IsInstanceOfType(control);
+        }
         // ─────────────────────────────────────────────────────────────────────────────
         // Strategy 2 — take the Input System's devices
         // ─────────────────────────────────────────────────────────────────────────────

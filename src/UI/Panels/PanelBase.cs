@@ -110,12 +110,23 @@ namespace UniverseLib.UI.Panels
         /// </summary>
         internal void TickPendingClose()
         {
-            if (closeRequestedOnFrame < 0 || Time.frameCount <= closeRequestedOnFrame)
+            if (closeRequestedOnFrame < 0 || Time.frameCount < closeRequestedOnFrame + CloseDelayFrames)
                 return;
 
             closeRequestedOnFrame = -1;
             SetActive(false);
         }
+
+        /// <summary>
+        /// Frames a click-initiated close waits before it actually happens.
+        /// </summary>
+        /// <remarks>
+        /// One is the sane value — just long enough for the dispatch to finish on a button that
+        /// still exists. Exposed so it can be pushed to something absurd while investigating: a
+        /// visible pause is the only way to tell "the delay does not help" from "the delay never
+        /// happened", and those two look identical from in front of the game.
+        /// </remarks>
+        public static int CloseDelayFrames = 1;
 
         protected virtual void OnClosePanelClicked()
         {

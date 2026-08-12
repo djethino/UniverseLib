@@ -222,13 +222,27 @@ public class InputSystem : IHandleInput
         _ => throw new NotImplementedException()
     };
 
+    // Every read below goes through the Input System's controls, which InputCapture may be
+    // patching to answer "not pressed" for the game. These reads are NOT the game's: they are how
+    // the consumer's hotkeys are detected and how its windows are dragged and resized. Reading
+    // them under Bypass is what keeps the menu working while the game's copy of the same input is
+    // taken. LegacyInput has had this from the start; leaving it out here made a game's panels
+    // undraggable the moment button capture was turned on.
+    static T Own<T>(Func<T> read)
+    {
+        bool previous = InputCapture.Bypass;
+        InputCapture.Bypass = true;
+        try { return read(); }
+        finally { InputCapture.Bypass = previous; }
+    }
+
     public bool GetMouseButtonDown(int btn)
     {
         if (p_btnWasPressed is null)
         {
             return false;
         }
-        object? pressed = p_btnWasPressed.GetValue(GetMouseButtonObject(btn), null);
+        object? pressed = Own(() => p_btnWasPressed.GetValue(GetMouseButtonObject(btn), null));
         return pressed is bool b && b;
     }
 
@@ -238,7 +252,7 @@ public class InputSystem : IHandleInput
         {
             return false;
         }
-        object? pressed = p_btnIsPressed.GetValue(GetMouseButtonObject(btn), null);
+        object? pressed = Own(() => p_btnIsPressed.GetValue(GetMouseButtonObject(btn), null));
         return pressed is bool b && b;
     }
 
@@ -248,7 +262,7 @@ public class InputSystem : IHandleInput
         {
             return false;
         }
-        object? released = p_btnWasReleased.GetValue(GetMouseButtonObject(btn), null);
+        object? released = Own(() => p_btnWasReleased.GetValue(GetMouseButtonObject(btn), null));
         return released is bool b && b;
     }
 
@@ -316,7 +330,7 @@ public class InputSystem : IHandleInput
         {
             return false;
         }
-        object? pressed = p_btnWasPressed.GetValue(actual, null);
+        object? pressed = Own(() => p_btnWasPressed.GetValue(actual, null));
         return pressed is bool b && b;
     }
 
@@ -327,7 +341,7 @@ public class InputSystem : IHandleInput
         {
             return false;
         }
-        object? pressed = p_btnIsPressed.GetValue(actual, null);
+        object? pressed = Own(() => p_btnIsPressed.GetValue(actual, null));
         return pressed is bool b && b;
     }
 
@@ -338,7 +352,7 @@ public class InputSystem : IHandleInput
         {
             return false;
         }
-        object? released = p_btnWasReleased.GetValue(actual, null);
+        object? released = Own(() => p_btnWasReleased.GetValue(actual, null));
         return released is bool b && b;
     }
 
