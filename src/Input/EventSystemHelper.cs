@@ -300,7 +300,21 @@ namespace UniverseLib.Input
 
         internal static bool Prefix_EventSystem_SetSelectedGameObject(GameObject __0)
         {
-            if (ConfigManager.Allow_UI_Selection_Outside_UIBase || !UniversalUI.AnyUIShowing || !UniversalUI.CanvasRoot)
+            // ⚠ AnyUIShowing alone is not the right question. It goes false the instant the last
+            // panel closes — which is exactly when the game's button gets re-selected and then
+            // submitted to, delivering the click that closed our window to whatever sat behind it.
+            // A consumer that still holds the pointer says so through InputCapture.UiOwnsPointer,
+            // and keeps this guard up for as long as it does.
+            bool consumerHolds = false;
+            var owns = InputCapture.UiOwnsPointer;
+            if (owns != null)
+            {
+                try { consumerHolds = owns(); } catch { }
+            }
+
+            if (ConfigManager.Allow_UI_Selection_Outside_UIBase
+                || (!UniversalUI.AnyUIShowing && !consumerHolds)
+                || !UniversalUI.CanvasRoot)
                 return true;
 
             bool allowed = __0 && __0.transform.root.gameObject.GetInstanceID() == UniversalUI.CanvasRoot.GetInstanceID();

@@ -88,6 +88,7 @@ namespace UniverseLib.UI.Panels
             if (!active && InputCapture.InModuleProcess)
             {
                 closeRequestedOnFrame = Time.frameCount;
+                Universe.Log($"[PanelBase] '{Name}' close deferred for {CloseDelayFrames} frames");
                 return;
             }
 
@@ -113,6 +114,7 @@ namespace UniverseLib.UI.Panels
             if (closeRequestedOnFrame < 0 || Time.frameCount < closeRequestedOnFrame + CloseDelayFrames)
                 return;
 
+            Universe.Log($"[PanelBase] '{Name}' deferred close happening now");
             closeRequestedOnFrame = -1;
             SetActive(false);
         }

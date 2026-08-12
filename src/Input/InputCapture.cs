@@ -147,6 +147,19 @@ namespace UniverseLib.Input
         /// </remarks>
         public static bool ConsumerReading { get; set; }
 
+        /// <summary>
+        /// Extra raycasters the consumer owns, beyond the ones under UniverseLib's canvas root.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ Hierarchy alone is not enough. A consumer legitimately puts things on canvases of its
+        /// own — an inspector's highlight overlay, a surface meant to catch a click before the game
+        /// does — and those are not children of the library's root. Without this they are treated
+        /// as the game's and silenced, which makes a click-catching surface catch nothing at all:
+        /// measured, the absorber sat in the raycast marked "not ours" while the click sailed past
+        /// it to the menu underneath.
+        /// </remarks>
+        public static Func<UnityEngine.EventSystems.BaseRaycaster, bool> OwnsRaycaster { get; set; }
+
         /// <summary>Is that intention obtainable on this game, by any means?</summary>
         public static bool CanCapture(CaptureKind kind)
         {
@@ -656,15 +669,40 @@ namespace UniverseLib.Input
         }
 
         /// <summary>
-        /// While clicks are ours, the pointer counts as being over an interface — because it is.
+        /// Answers whether the consumer's interface currently owns the pointer.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ Deliberately NOT tied to <see cref="CaptureKind.MouseButtons"/>, and that distinction
+        /// is the whole point.
+        ///
+        /// A game that reads the mouse itself asks this before acting, so as not to fire a click
+        /// meant for an interface. Capturing its READS is therefore counterproductive: it never
+        /// sees the click, so it never gets to dismiss it, and it acts on it later instead —
+        /// measured, a click on a close button reaching the menu behind it the moment the
+        /// interface let go, at any delay from 0.1 s to 10 s.
+        ///
+        /// Letting it see the click while answering "yes, that was for a UI" is what makes it
+        /// discard the click there and then. So this holds even with every capture switched off.
+        /// </remarks>
+        public static Func<bool> UiOwnsPointer { get; set; }
+
+        /// <summary>
+        /// While the interface owns the pointer, it counts as being over UI — because it is.
         /// </summary>
         public static void Postfix_IsPointerOverGameObject(ref bool __result)
         {
-            if (__result)
+            if (__result || ConsumerReading)
                 return;
 
-            if (Wants(CaptureKind.MouseButtons, Raycasts, honourBypass: false))
-                __result = true;
+            var owns = UiOwnsPointer;
+            if (owns == null)
+                return;
+
+            try
+            {
+                if (owns()) __result = true;
+            }
+            catch { }
         }
 
         /// <summary>The raycast strategy, for the prefix to report into.</summary>
@@ -713,6 +751,18 @@ namespace UniverseLib.Input
             {
                 if (narrate) Narrate(__instance, "ours, let through");
                 return true;
+            }
+
+            var owns = OwnsRaycaster;
+            if (owns != null)
+            {
+                bool mine = false;
+                try { mine = owns(__instance); } catch { }
+                if (mine)
+                {
+                    if (narrate) Narrate(__instance, "ours (declared), let through");
+                    return true;
+                }
             }
 
             if (!Wants(CaptureKind.MouseButtons, Raycasts, honourBypass: false))
