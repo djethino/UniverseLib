@@ -325,21 +325,77 @@ namespace UniverseLib.Input
             p_mouseCurrent = t_Mouse?.GetProperty("current");
 
             var device = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputDevice");
-            if (device != null)
-            {
-                m_disableDevice = t_InputSystem.GetMethod("DisableDevice", new Type[] { device });
-                m_enableDevice = t_InputSystem.GetMethod("EnableDevice", new Type[] { device });
-            }
+            m_disableDevice = FindDeviceMethod("DisableDevice", device);
+            m_enableDevice = FindDeviceMethod("EnableDevice", device);
 
             if (m_disableDevice == null || m_enableDevice == null || (p_keyboardCurrent == null && p_mouseCurrent == null))
             {
-                Devices.Reason = "This game's Input System does not expose device enabling.";
+                // Name what is missing. "Does not expose device enabling" sent us looking at the
+                // game when the fault was a signature we had asked for too precisely.
+                var missing = new List<string>();
+                if (m_disableDevice == null) missing.Add("InputSystem.DisableDevice");
+                if (m_enableDevice == null) missing.Add("InputSystem.EnableDevice");
+                if (p_keyboardCurrent == null && p_mouseCurrent == null) missing.Add("Keyboard.current / Mouse.current");
+
+                Devices.Reason = "This game's Input System is missing " + string.Join(", ", missing.ToArray()) + ".";
                 return;
             }
 
             Devices.Available = true;
             if (p_keyboardCurrent != null) Devices.Patched.Add("Keyboard"); else Devices.Missed.Add("Keyboard");
             if (p_mouseCurrent != null) Devices.Patched.Add("Mouse"); else Devices.Missed.Add("Mouse");
+        }
+
+        /// <summary>
+        /// Find DisableDevice/EnableDevice by name and first parameter, never by exact signature.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ Asking for the exact signature (InputDevice) finds nothing on a current Input System:
+        /// these methods gained an optional second parameter (keepSendingEvents) along the way, and
+        /// reflection does not apply defaults when matching. That miss is what made a game with a
+        /// perfectly working Input System report "does not expose device enabling".
+        /// </remarks>
+        static MethodInfo FindDeviceMethod(string name, Type device)
+        {
+            try
+            {
+                foreach (var m in t_InputSystem.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                {
+                    if (m.Name != name) continue;
+
+                    var ps = m.GetParameters();
+                    if (ps.Length == 0) continue;
+
+                    // When the type resolved, insist on it; otherwise take the name's word for it
+                    // rather than refusing to work at all.
+                    if (device != null && !ps[0].ParameterType.IsAssignableFrom(device)) continue;
+
+                    return m;
+                }
+            }
+            catch (Exception ex)
+            {
+                Universe.LogWarning($"[InputCapture] Looking up {name} failed: {ex.Message}");
+            }
+            return null;
+        }
+
+        /// <summary>Arguments for a device method: the device, then whatever defaults follow.</summary>
+        static object[] ArgsFor(MethodInfo method, object device)
+        {
+            var ps = method.GetParameters();
+            var args = new object[ps.Length];
+            args[0] = device;
+            for (int i = 1; i < ps.Length; i++)
+            {
+                // IsOptional/DefaultValue rather than HasDefaultValue: the Mono build of this
+                // library targets net35, where the latter does not exist.
+                object given = ps[i].IsOptional ? ps[i].DefaultValue : null;
+                if (given == null || given == DBNull.Value)
+                    given = ps[i].ParameterType.IsValueType ? Activator.CreateInstance(ps[i].ParameterType) : null;
+                args[i] = given;
+            }
+            return args;
         }
 
         static object Current(PropertyInfo p)
@@ -355,7 +411,8 @@ namespace UniverseLib.Input
 
             try
             {
-                (disable ? m_disableDevice : m_enableDevice).Invoke(null, new object[] { dev });
+                var method = disable ? m_disableDevice : m_enableDevice;
+                method.Invoke(null, ArgsFor(method, dev));
                 return true;
             }
             catch (Exception ex)
