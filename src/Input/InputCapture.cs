@@ -148,6 +148,29 @@ namespace UniverseLib.Input
             }
         }
 
+        /// <summary>
+        /// Same question, without touching the counters.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ For callers that ask on their own schedule rather than because the game read
+        /// something — <see cref="Tick"/>, once a frame. Counting those made "Keyboard: 0/3222"
+        /// look like three thousand reads by the game when it was three thousand frames of ours,
+        /// which is worse than no measurement at all: it reads as a working capture on a game that
+        /// never came near the API.
+        /// </remarks>
+        static bool WantsQuiet(CaptureKind kind)
+        {
+            if (Bypass)
+                return false;
+
+            var ask = ShouldCapture;
+            if (ask == null)
+                return false;
+
+            try { return ask(kind); }
+            catch { return false; }
+        }
+
         static bool Wants(CaptureKind kind)
         {
             if (Bypass)
@@ -435,9 +458,13 @@ namespace UniverseLib.Input
             if (!Devices.Available)
                 return;
 
-            bool wantKeyboard = Wants(CaptureKind.Keyboard);
-            // One device carries both, so either intent claims it.
-            bool wantMouse = Wants(CaptureKind.MouseButtons) || Wants(CaptureKind.MouseAxes);
+            bool wantKeyboard = WantsQuiet(CaptureKind.Keyboard);
+            // One device carries both, so either intent claims it. Both asked explicitly rather
+            // than through || — short-circuiting would leave MouseAxes unasked and reading as
+            // "the game never called it" whenever buttons were wanted too.
+            bool wantButtons = WantsQuiet(CaptureKind.MouseButtons);
+            bool wantAxes = WantsQuiet(CaptureKind.MouseAxes);
+            bool wantMouse = wantButtons || wantAxes;
 
             if (wantKeyboard || wantMouse)
                 Devices.Asked++;
