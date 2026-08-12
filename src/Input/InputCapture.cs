@@ -210,6 +210,7 @@ namespace UniverseLib.Input
 
             _strategies.Add(new LegacyPatchStrategy());
             _strategies.Add(new InputSystemDeviceStrategy());
+            _strategies.Add(new UiRaycastStrategy());
 
             foreach (var s in _strategies)
             {
@@ -374,11 +375,18 @@ namespace UniverseLib.Input
             }
         }
 
-        /// <summary>The legacy strategy, for the postfixes to report into.</summary>
-        static Strategy Legacy
+        /// <summary>Find a strategy by type — never by index, which silently follows registration order.</summary>
+        static Strategy Find<T>() where T : Strategy
         {
-            get { return _strategies.Count > 0 ? _strategies[0] : null; }
+            foreach (var s in _strategies)
+            {
+                if (s is T) return s;
+            }
+            return null;
         }
+
+        /// <summary>The legacy strategy, for the postfixes to report into.</summary>
+        static Strategy Legacy { get { return Find<LegacyPatchStrategy>(); } }
 
         /// <summary>Applied to GetKey* and GetMouseButton*: report nothing pressed while captured.</summary>
         public static void Postfix_Bool(ref bool __result, MethodBase __originalMethod)
@@ -440,6 +448,108 @@ namespace UniverseLib.Input
         public static void Finalizer_Module_Process()
         {
             Bypass = false;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Strategy 3 — keep the game's raycasters out of the pointer's way
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Stops the game's raycasters from answering the pointer while a UI is shown, so nothing
+        /// behind the window reacts to a click.
+        /// </summary>
+        /// <remarks>
+        /// The other two strategies stop the game from READING input. This one is different in
+        /// kind: the game reads nothing, it is being TOLD. An EventSystem raycast asks every
+        /// BaseRaycaster in the scene, not just the one on the canvas its module lives on — so
+        /// UniverseLib's own module happily finds the game's buttons next to our window and
+        /// delivers the click to them. Reported from a game where the menus beside the panel
+        /// stayed clickable while its keyboard was properly taken.
+        ///
+        /// Works where the other two cannot: Raycast is ordinary managed code on every runtime,
+        /// unlike GetMouseButton (InternalCall on Mono) and unlike device disabling (refused when
+        /// the menu shares the Input System with the game).
+        ///
+        /// ⚠ Ours is let through, by hierarchy — cutting it would make our own window unclickable,
+        /// the same trap Bypass exists for on the legacy side.
+        /// </remarks>
+        class UiRaycastStrategy : Strategy
+        {
+            public override string Name { get { return "Pointer raycasts"; } }
+
+            public override bool Serves(CaptureKind kind)
+            {
+                // Clicks only. It says nothing about keys, and nothing about mouse MOVEMENT: a
+                // raycast is not consulted for a camera turning, so claiming those would grey in
+                // an option that does nothing.
+                return kind == CaptureKind.MouseButtons;
+            }
+
+            public override void Probe()
+            {
+                var prefix = AccessTools.Method(typeof(InputCapture), nameof(Prefix_Raycast));
+
+                // Each is optional: a 2D game has no PhysicsRaycaster, a game without uGUI has no
+                // GraphicRaycaster. One is enough to be useful.
+                Hook("UnityEngine.UI.GraphicRaycaster", prefix);
+                Hook("UnityEngine.EventSystems.PhysicsRaycaster", prefix);
+                Hook("UnityEngine.EventSystems.Physics2DRaycaster", prefix);
+
+                Available = Hooked.Count > 0;
+                if (!Available)
+                    Reason = "This game has no raycaster this mod can step out of.";
+            }
+
+            void Hook(string typeName, MethodInfo prefix)
+            {
+                Type t = ReflectionUtility.GetTypeByName(typeName);
+                if (t == null)
+                {
+                    Missed.Add(typeName.Substring(typeName.LastIndexOf('.') + 1));
+                    return;
+                }
+
+                string label = typeName.Substring(typeName.LastIndexOf('.') + 1);
+                // (Type[])null, not null: the two Patch overloads differ only by Type[] vs Type[][],
+                // so a bare null cannot be resolved. Passing null means "match on the name alone",
+                // which is what we want — the parameter types differ per runtime (List<T> vs
+                // Il2CppSystem List) and naming them would tie this to one of them.
+                if (Universe.Patch(t, "Raycast", MethodType.Normal, (Type[])null, prefix: prefix))
+                    Hooked.Add(label);
+                else
+                    Missed.Add(label);
+            }
+        }
+
+        /// <summary>The raycast strategy, for the prefix to report into.</summary>
+        static Strategy Raycasts { get { return Find<UiRaycastStrategy>(); } }
+
+        /// <summary>
+        /// Skip a raycaster that is not ours, while clicks are being captured.
+        /// </summary>
+        /// <remarks>
+        /// Returning false skips the original, so that raycaster appends nothing and the pointer
+        /// simply finds nothing there. Deliberately not clearing the result list afterwards: other
+        /// raycasters — ours — have already contributed to it.
+        /// </remarks>
+        public static bool Prefix_Raycast(UnityEngine.EventSystems.BaseRaycaster __instance)
+        {
+            if (__instance == null)
+                return true;
+
+            // Ours goes through, always. Compared by hierarchy rather than by a registry: panels,
+            // popups and dropdowns all live under the one root, and a dropdown blocker created
+            // three frames ago would not be in any list we kept.
+            var root = UI.UniversalUI.CanvasRoot;
+            if (root != null && __instance.transform.IsChildOf(root.transform))
+                return true;
+
+            if (!Wants(CaptureKind.MouseButtons, true))
+                return true;
+
+            var s = Raycasts;
+            if (s != null) s.Silenced++;
+            return false;
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
