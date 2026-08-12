@@ -208,9 +208,12 @@ namespace UniverseLib.Input
                 return;
             initialized = true;
 
-            _strategies.Add(new LegacyPatchStrategy());
+            _legacy = new LegacyPatchStrategy();
+            _raycasts = new UiRaycastStrategy();
+
+            _strategies.Add(_legacy);
             _strategies.Add(new InputSystemDeviceStrategy());
-            _strategies.Add(new UiRaycastStrategy());
+            _strategies.Add(_raycasts);
 
             foreach (var s in _strategies)
             {
@@ -375,18 +378,13 @@ namespace UniverseLib.Input
             }
         }
 
-        /// <summary>Find a strategy by type — never by index, which silently follows registration order.</summary>
-        static Strategy Find<T>() where T : Strategy
-        {
-            foreach (var s in _strategies)
-            {
-                if (s is T) return s;
-            }
-            return null;
-        }
+        // Held directly rather than looked up. A generic Find<T>() over the list came back null on
+        // a real runtime, and the only visible symptom was a tally frozen at zero while the capture
+        // itself worked — an instrument lying about the thing it exists to measure.
+        static Strategy _legacy, _raycasts;
 
         /// <summary>The legacy strategy, for the postfixes to report into.</summary>
-        static Strategy Legacy { get { return Find<LegacyPatchStrategy>(); } }
+        static Strategy Legacy { get { return _legacy; } }
 
         /// <summary>Applied to GetKey* and GetMouseButton*: report nothing pressed while captured.</summary>
         public static void Postfix_Bool(ref bool __result, MethodBase __originalMethod)
@@ -502,19 +500,47 @@ namespace UniverseLib.Input
 
             void Hook(string typeName, MethodInfo prefix)
             {
+                string label = typeName.Substring(typeName.LastIndexOf('.') + 1);
+
                 Type t = ReflectionUtility.GetTypeByName(typeName);
                 if (t == null)
                 {
-                    Missed.Add(typeName.Substring(typeName.LastIndexOf('.') + 1));
+                    Missed.Add(label);
                     return;
                 }
 
-                string label = typeName.Substring(typeName.LastIndexOf('.') + 1);
-                // (Type[])null, not null: the two Patch overloads differ only by Type[] vs Type[][],
-                // so a bare null cannot be resolved. Passing null means "match on the name alone",
-                // which is what we want — the parameter types differ per runtime (List<T> vs
-                // Il2CppSystem List) and naming them would tie this to one of them.
-                if (Universe.Patch(t, "Raycast", MethodType.Normal, (Type[])null, prefix: prefix))
+                // ⚠ The parameter types MUST be named, and cannot be written down.
+                //
+                // Matching on the name alone throws on GraphicRaycaster, which owns a second,
+                // private Raycast — so the one raycaster that answers for uGUI menus was the only
+                // one silently missed, leaving a game whose hover stopped but whose clicks still
+                // landed. And they cannot be hardcoded either: the second parameter is List<T>
+                // on Mono and an Il2CppSystem list on IL2CPP.
+                //
+                // So find the override — two parameters, the first a PointerEventData — and hand
+                // its own parameter types back to the patcher.
+                Type pointerData = ReflectionUtility.GetTypeByName("UnityEngine.EventSystems.PointerEventData");
+                Type[] signature = null;
+
+                foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (m.Name != "Raycast") continue;
+
+                    var ps = m.GetParameters();
+                    if (ps.Length != 2) continue;
+                    if (pointerData != null && !ps[0].ParameterType.IsAssignableFrom(pointerData)) continue;
+
+                    signature = new Type[] { ps[0].ParameterType, ps[1].ParameterType };
+                    break;
+                }
+
+                if (signature == null)
+                {
+                    Missed.Add(label);
+                    return;
+                }
+
+                if (Universe.Patch(t, "Raycast", MethodType.Normal, signature, prefix: prefix))
                     Hooked.Add(label);
                 else
                     Missed.Add(label);
@@ -522,7 +548,7 @@ namespace UniverseLib.Input
         }
 
         /// <summary>The raycast strategy, for the prefix to report into.</summary>
-        static Strategy Raycasts { get { return Find<UiRaycastStrategy>(); } }
+        static Strategy Raycasts { get { return _raycasts; } }
 
         /// <summary>
         /// Skip a raycaster that is not ours, while clicks are being captured.
