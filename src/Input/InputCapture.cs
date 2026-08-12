@@ -179,7 +179,17 @@ namespace UniverseLib.Input
                 : "This game gives no way to take that from it.";
         }
 
-        static bool Wants(CaptureKind kind, bool count)
+        /// <summary>
+        /// Is that intention wanted right now — and if so, chalk it up to the strategy that ASKED.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ The counter belongs to the caller, never to "every strategy serving this kind". When
+        /// it was the latter, the raycast prefix's question was also chalked up to the legacy
+        /// patches, which reported 0/236208 on a game whose legacy input it had never once been
+        /// asked about — a borrowed number, and the second time an instrument here has told us
+        /// about a mechanism that was not running.
+        /// </remarks>
+        static bool Wants(CaptureKind kind, Strategy counter)
         {
             if (Bypass || ConsumerReading)
                 return false;
@@ -191,17 +201,8 @@ namespace UniverseLib.Input
             try
             {
                 bool wanted = ask(kind);
-                if (wanted && count)
-                {
-                    // Counted on the read, never on our own polling: counting Tick's once-a-frame
-                    // question made "0/3222" look like three thousand reads by a game that had
-                    // never touched the API. A tally that reads as a working capture where there
-                    // is none is worse than no tally.
-                    foreach (var s in _strategies)
-                    {
-                        if (s.Available && s.Serves(kind)) s.Asked++;
-                    }
-                }
+                if (wanted && counter != null)
+                    counter.Asked++;
                 return wanted;
             }
             catch (Exception ex)
@@ -411,11 +412,10 @@ namespace UniverseLib.Input
                 ? CaptureKind.MouseButtons
                 : CaptureKind.Keyboard;
 
-            if (Wants(kind, true))
+            if (Wants(kind, Legacy))
             {
                 __result = false;
-                var s = Legacy;
-                if (s != null) s.Silenced++;
+                if (Legacy != null) Legacy.Silenced++;
             }
         }
 
@@ -437,11 +437,10 @@ namespace UniverseLib.Input
             if (__0.IndexOf("Mouse", StringComparison.OrdinalIgnoreCase) < 0)
                 return;
 
-            if (Wants(CaptureKind.MouseAxes, true))
+            if (Wants(CaptureKind.MouseAxes, Legacy))
             {
                 __result = 0f;
-                var s = Legacy;
-                if (s != null) s.Silenced++;
+                if (Legacy != null) Legacy.Silenced++;
             }
         }
 
@@ -585,11 +584,10 @@ namespace UniverseLib.Input
             if (root != null && __instance.transform.IsChildOf(root.transform))
                 return true;
 
-            if (!Wants(CaptureKind.MouseButtons, true))
+            if (!Wants(CaptureKind.MouseButtons, Raycasts))
                 return true;
 
-            var s = Raycasts;
-            if (s != null) s.Silenced++;
+            if (Raycasts != null) Raycasts.Silenced++;
             return false;
         }
 
@@ -716,11 +714,11 @@ namespace UniverseLib.Input
             public override void Tick()
             {
                 // Asked without counting: this is our own polling, not the game reading anything.
-                bool wantKeyboard = Wants(CaptureKind.Keyboard, false);
+                bool wantKeyboard = Wants(CaptureKind.Keyboard, null);
                 // One device carries both, and both are asked explicitly — a || short-circuit
                 // would leave MouseAxes permanently unasked whenever buttons were wanted too.
-                bool wantButtons = Wants(CaptureKind.MouseButtons, false);
-                bool wantAxes = Wants(CaptureKind.MouseAxes, false);
+                bool wantButtons = Wants(CaptureKind.MouseButtons, null);
+                bool wantAxes = Wants(CaptureKind.MouseAxes, null);
                 bool wantMouse = wantButtons || wantAxes;
 
                 if (wantKeyboard || wantMouse)
