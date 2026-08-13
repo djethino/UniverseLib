@@ -106,6 +106,116 @@ namespace UniverseLib.UI
 
         #endregion
 
+        #region Shapes
+
+        /// <summary>
+        /// The rounded corners, supplied from outside.
+        ///
+        /// uGUI has no border-radius: an <see cref="Image"/> with no sprite draws a plain rectangle,
+        /// which is why everything built here used to be square. A 9-slice sprite fixes that — the
+        /// four corners keep their curve, the four edges stretch, the middle fills — and one white
+        /// sprite serves every surface, since <c>Image.color</c> still does the tinting.
+        ///
+        /// ⚠ These are DELIBERATELY not built here. Making a texture and a sprite at runtime works
+        /// differently on Mono and on IL2CPP, and the consumer already owns a version of that code
+        /// which has been running in games for months. A second one written here would be a second
+        /// thing to keep true on both runtimes, and the IL2CPP half of it would go untested until a
+        /// player hit it. So: whoever wants round corners hands them over, the same way they hand
+        /// over <see cref="Colors"/>.
+        ///
+        /// Everything is null by default and every user of it checks — nothing supplied means square
+        /// corners, which is exactly what this factory did before. A missing sprite must never be an
+        /// exception: half a panel is worse than a plain one.
+        /// </summary>
+        public static class Shapes
+        {
+            /// <summary>Cards, panels, anything that reads as a surface.</summary>
+            public static Sprite Card;
+
+            /// <summary>
+            /// The same, round at the top and square at the bottom: a title bar crowning a panel,
+            /// an active tab meeting its content. Square corners there would poke out of the
+            /// rounded ones underneath.
+            /// </summary>
+            public static Sprite CardTop;
+
+            /// <summary>The mirror of <see cref="CardTop"/>: what sits UNDER a tab row.</summary>
+            public static Sprite CardBottom;
+
+            /// <summary>Buttons, fields, dropdowns — anything you act on.</summary>
+            public static Sprite Control;
+
+            /// <summary>
+            /// Small marks: a checkbox, a badge, a scrollbar handle. A 20-pixel box given the card's
+            /// radius comes out a circle, which is a radio button — a different promise entirely.
+            /// </summary>
+            public static Sprite Small;
+
+            /// <summary>A ring: transparent middle, one line around the edge. Tinted like any Image.</summary>
+            public static Sprite Border;
+
+            /// <summary>The same ring at the small radius, for what <see cref="Small"/> shapes.</summary>
+            public static Sprite BorderSmall;
+
+            /// <summary>Colour of the line <see cref="AddBorder"/> draws when the caller names none.</summary>
+            public static Color BorderColor = new(0.24f, 0.28f, 0.35f, 1f);
+        }
+
+        /// <summary>
+        /// Give an existing Image a shape. Null sprite → left exactly as it was (square).
+        /// </summary>
+        public static void SetShape(Image image, Sprite shape)
+        {
+            if (!image || !shape) return;
+
+            image.sprite = shape;
+            image.type = Image.Type.Sliced;
+            // A sliced sprite whose destination is narrower than its own corners cannot be drawn as
+            // asked; Unity would rather warn every frame than let it go. The centre is what would be
+            // missing, and on a shape this small there is no centre to speak of.
+            image.fillCenter = true;
+        }
+
+        /// <summary>
+        /// Draw a one-pixel line around <paramref name="target"/>, in the shape of
+        /// <see cref="Shapes.Border"/>. Does nothing when no ring sprite was supplied.
+        ///
+        /// ⚠ The line is an extra child, because an Image has ONE tint and a border is a second
+        /// colour. It is marked <c>ignoreLayout</c> so the parent's layout group neither positions
+        /// it nor counts it in its height, and it never takes a click.
+        ///
+        /// It sits BEHIND whatever is added to the target afterwards, like a CSS border does. That
+        /// only shows if a child paints an opaque background over the whole rect — with any padding
+        /// at all, the line stays visible.
+        /// </summary>
+        public static GameObject AddBorder(GameObject target, Color? color = null, Sprite shape = null)
+        {
+            Sprite ring = shape ? shape : Shapes.Border;
+            if (!target || !ring) return null;
+
+            GameObject border = CreateUIObject("Border", target);
+
+            RectTransform rect = border.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            LayoutElement layout = border.AddComponent<LayoutElement>();
+            layout.ignoreLayout = true;
+
+            Image image = border.AddComponent<Image>();
+            image.sprite = ring;
+            image.type = Image.Type.Sliced;
+            image.fillCenter = false;
+            image.color = color ?? Shapes.BorderColor;
+            image.raycastTarget = false;
+
+            return border;
+        }
+
+        #endregion
+
         /// <summary>
         /// Create a simple UI object with a RectTransform. <paramref name="parent"/> can be null.
         /// </summary>
@@ -267,7 +377,11 @@ namespace UniverseLib.UI
             rect.sizeDelta = Vector2.zero;
 
             // Very subtle outer edge (nearly invisible)
-            panelObj.AddComponent<Image>().color = new Color(0.08f, 0.10f, 0.14f, 1f);
+            Image edgeImage = panelObj.AddComponent<Image>();
+            edgeImage.color = new Color(0.08f, 0.10f, 0.14f, 1f);
+            SetShape(edgeImage, Shapes.Card);
+            // The mask clips to the rect, which is LARGER than the rounded content inside it, so it
+            // takes nothing off the corners. It is here to hold the content in, and still does.
             panelObj.AddComponent<RectMask2D>();
 
             contentHolder = CreateUIObject("Content", panelObj);
@@ -275,6 +389,7 @@ namespace UniverseLib.UI
             Image bgImage = contentHolder.AddComponent<Image>();
             bgImage.type = Image.Type.Filled;
             bgImage.color = bgColor ?? Colors.PanelBackground;
+            SetShape(bgImage, Shapes.Card);
 
             // Minimal padding (1px border effect)
             SetLayoutGroup<VerticalLayoutGroup>(contentHolder, true, true, true, true, 1, 1, 1, 1, 1);
@@ -425,6 +540,7 @@ namespace UniverseLib.UI
             Image image = buttonObj.AddComponent<Image>();
             image.type = Image.Type.Sliced;
             image.color = new Color(1, 1, 1, 1);
+            SetShape(image, Shapes.Control);
 
             Button button = buttonObj.AddComponent<Button>();
             SetDefaultSelectableValues(button);
@@ -491,6 +607,9 @@ namespace UniverseLib.UI
             Image bgImage = bgObj.AddComponent<Image>();
             bgImage.type = Image.Type.Sliced;
             bgImage.color = new Color(0.15f, 0.15f, 0.15f, 1.0f);
+            // A slider's track and its filled part are the same object seen twice: rounding only
+            // one of them leaves a square edge poking out of a round groove.
+            SetShape(bgImage, Shapes.Small);
 
             RectTransform bgRect = bgObj.GetComponent<RectTransform>();
             bgRect.anchorMin = new Vector2(0f, 0.25f);
@@ -506,6 +625,7 @@ namespace UniverseLib.UI
             Image fillImage = fillObj.AddComponent<Image>();
             fillImage.type = Image.Type.Sliced;
             fillImage.color = new Color(0.3f, 0.3f, 0.3f, 1.0f);
+            SetShape(fillImage, Shapes.Small);
 
             fillObj.GetComponent<RectTransform>().sizeDelta = new Vector2(10f, 0f);
 
@@ -516,6 +636,7 @@ namespace UniverseLib.UI
 
             Image handleImage = handleObj.AddComponent<Image>();
             handleImage.color = new Color(0.5f, 0.5f, 0.5f, 1.0f);
+            SetShape(handleImage, Shapes.Small);
 
             handleObj.GetComponent<RectTransform>().sizeDelta = new Vector2(20f, 0f);
 
@@ -548,10 +669,12 @@ namespace UniverseLib.UI
             Image scrollImage = scrollObj.AddComponent<Image>();
             scrollImage.type = Image.Type.Sliced;
             scrollImage.color = new Color(0.1f, 0.1f, 0.1f);
+            SetShape(scrollImage, Shapes.Small);
 
             Image handleImage = handleObj.AddComponent<Image>();
             handleImage.type = Image.Type.Sliced;
             handleImage.color = new Color(0.4f, 0.4f, 0.4f);
+            SetShape(handleImage, Shapes.Small);
 
             RectTransform slideAreaRect = slideAreaObj.GetComponent<RectTransform>();
             slideAreaRect.sizeDelta = new Vector2(-20f, -20f);
@@ -599,12 +722,20 @@ namespace UniverseLib.UI
             GameObject checkBgObj = CreateUIObject("Background", toggleObj);
             Image bgImage = checkBgObj.AddComponent<Image>();
             bgImage.color = bgColor == default ? Colors.ToggleBackground : bgColor;
+            SetShape(bgImage, Shapes.Small);
 
             // Subtle light border so the (small) box reads on ANY container background — a fill alone can't
             // win on both light and dark cards.
-            var boxOutline = checkBgObj.AddComponent<Outline>();
-            boxOutline.effectColor = Colors.ToggleBorder;
-            boxOutline.effectDistance = new Vector2(1.4f, -1.4f);
+            //
+            // A real ring when there is a shape to draw one with: Outline works by stacking four
+            // offset copies of the mesh, which reads as a smudge towards the corners once those
+            // corners are round. Without a shape it remains the only way to draw an edge at all.
+            if (AddBorder(checkBgObj, Colors.ToggleBorder, Shapes.BorderSmall) == null)
+            {
+                var boxOutline = checkBgObj.AddComponent<Outline>();
+                boxOutline.effectColor = Colors.ToggleBorder;
+                boxOutline.effectDistance = new Vector2(1.4f, -1.4f);
+            }
 
             SetLayoutGroup<HorizontalLayoutGroup>(checkBgObj, true, true, true, true, 0, 2, 2, 2, 2);
             SetLayoutElement(checkBgObj, minWidth: checkWidth, flexibleWidth: 0, minHeight: checkHeight, flexibleHeight: 0);
@@ -614,6 +745,8 @@ namespace UniverseLib.UI
             GameObject checkMarkObj = CreateUIObject("Checkmark", checkBgObj);
             Image checkImage = checkMarkObj.AddComponent<Image>();
             checkImage.color = Colors.ToggleCheckmark;
+            // Or its square corners would stick out through the rounded ones of the box it fills.
+            SetShape(checkImage, Shapes.Small);
 
             // Label 
 
@@ -647,6 +780,8 @@ namespace UniverseLib.UI
             Image mainImage = mainObj.AddComponent<Image>();
             mainImage.type = Image.Type.Sliced;
             mainImage.color = Colors.InputBackground;
+            SetShape(mainImage, Shapes.Control);
+            AddBorder(mainObj, Colors.InputBorder);
 
             InputField inputField = mainObj.AddComponent<InputField>();
             Navigation nav = inputField.navigation;
@@ -761,6 +896,7 @@ namespace UniverseLib.UI
 
             Image itemBgImage = itemBgObj.AddComponent<Image>();
             itemBgImage.color = Colors.DropdownItemNormal;
+            SetShape(itemBgImage, Shapes.Small);
 
             Toggle itemToggle = itemObj.AddComponent<Toggle>();
             itemToggle.targetGraphic = itemBgImage;
@@ -772,6 +908,14 @@ namespace UniverseLib.UI
             Image templateImage = templateObj.AddComponent<Image>();
             templateImage.type = Image.Type.Sliced;
             templateImage.color = Colors.DarkBackground;
+            // The open list is a surface of its own, so it gets the card's radius and edge.
+            //
+            // ⚠ The viewport below is a Mask and is deliberately LEFT SQUARE. A mask follows the
+            // shape of its graphic, but the stencil it writes is one bit — a rounded mask comes out
+            // as a staircase, which is worse than the two or three pixels of item corner that show
+            // through the rounded corners of this template. Worth a look in game either way.
+            SetShape(templateImage, Shapes.Card);
+            AddBorder(templateObj);
 
             ScrollRect scrollRect = templateObj.AddComponent<ScrollRect>();
             scrollRect.scrollSensitivity = 20;
@@ -795,6 +939,8 @@ namespace UniverseLib.UI
             Image dropdownImage = dropdownObj.AddComponent<Image>();
             dropdownImage.color = Colors.DropdownBackground;
             dropdownImage.type = Image.Type.Sliced;
+            SetShape(dropdownImage, Shapes.Control);
+            AddBorder(dropdownObj, Colors.InputBorder);
 
             dropdown = dropdownObj.AddComponent<Dropdown>();
             dropdown.targetGraphic = dropdownImage;
@@ -978,6 +1124,9 @@ namespace UniverseLib.UI
             // Tinting here too multiplied the two (0.5 × 0.4 = 0.2) and left the grip almost as
             // dark as its track — invisible whenever the content is long enough to shrink it.
             handleImage.color = Color.white;
+            // The site's scrollbars are fully round (`border-radius: 9999px` on the thumb). At
+            // 21 pixels wide the control radius is as good as a pill.
+            SetShape(handleImage, Shapes.Control);
 
             RectTransform handleRect = handleObj.GetComponent<RectTransform>();
             handleRect.pivot = new Vector2(0.5f, 0.5f);
@@ -1024,6 +1173,9 @@ namespace UniverseLib.UI
             Image mainImage = mainObj.AddComponent<Image>();
             mainImage.type = Image.Type.Filled;
             mainImage.color = (color == default) ? Colors.ScrollViewBackground : color;
+            // The frame around the list is a surface; the viewport inside it is a Mask and stays
+            // square on purpose (a one-bit stencil cannot round a corner without a staircase).
+            SetShape(mainImage, Shapes.Card);
 
             SetLayoutElement(mainObj, flexibleHeight: 9999, flexibleWidth: 9999);
 

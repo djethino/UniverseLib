@@ -165,8 +165,18 @@ namespace UniverseLib.Runtime
 
         /// <summary>
         /// Helper for creating a <see cref="Sprite" /> from the provided <paramref name="texture"/>.
+        ///
+        /// ⚠ This used to be declared <c>void</c> while its implementation returned the sprite, so
+        /// the only overload that can carry a 9-slice <paramref name="border"/> threw its result
+        /// away and no caller could use it. Nothing broke, because nothing called it.
+        ///
+        /// ⚠ Both implementations build the mesh as <c>SpriteMeshType.Tight</c>, which trims it to
+        /// the opaque part of the texture. That is right for a picture and wrong for a 9-slice
+        /// shape, whose corners are transparent by design — the slicing comes out mangled. Anyone
+        /// making a sliced sprite from here has to reckon with that; it is why UIFactory.Shapes
+        /// asks to be handed its sprites rather than building them.
         /// </summary>
-        public static void CreateSprite(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit, uint extrude, Vector4 border)
+        public static Sprite CreateSprite(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit, uint extrude, Vector4 border)
             => Instance.Internal_CreateSprite(texture, rect, pivot, pixelsPerUnit, extrude, border);
         
         protected internal abstract Sprite Internal_CreateSprite(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit, 

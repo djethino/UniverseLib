@@ -200,6 +200,9 @@ namespace UniverseLib.UI.Panels
             TitleBar = UIFactory.CreateHorizontalGroup(ContentRoot, "TitleBar", false, true, true, true, 0,
                 new Vector4(8, 4, 8, 4), UIFactory.Colors.TitleBarBackground);
             UIFactory.SetLayoutElement(TitleBar, minHeight: 28, flexibleHeight: 0);
+            // Round at the top only: the bar crowns the panel, so it follows its corners there and
+            // stays square where it meets the content underneath.
+            UIFactory.SetShape(TitleBar.GetComponent<Image>(), UIFactory.Shapes.CardTop);
 
             // Title text
             Text titleTxt = UIFactory.CreateLabel(TitleBar, "TitleText", Name, TextAnchor.MiddleLeft, fontSize: 14);
