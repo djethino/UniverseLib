@@ -34,48 +34,25 @@ namespace UniverseLib.Runtime.Il2Cpp
             => NewTexture(width, height, textureFormat, mipChain);
 
         /// <summary>
-        /// The six-argument constructor when the game has it, the four-argument one otherwise.
+        /// The four-argument constructor, and only that one.
         ///
         /// 🔴 <c>Texture2D(int, int, TextureFormat, int, bool, IntPtr)</c> is NOT present in every
-        /// Unity version an IL2CPP game may be built with. Calling it unconditionally throws
-        /// <c>MissingMethodException</c> at the first texture — and because that first texture is
-        /// created while a consumer is building its UI, the throw aborts the whole construction:
-        /// panels made before it stay on screen, panels after it never exist. What the player sees
-        /// is a stray oversized window; what it is, is the consumer dead on startup. Seen on
-        /// Unity 2022.3.62f2.
+        /// Unity version an IL2CPP game may be built with, and it was called unconditionally. On
+        /// Unity 2022.3.62f2 the first texture threw <c>MissingMethodException</c> — thrown while a
+        /// consumer was building its UI, so the whole construction aborted: panels made before it
+        /// stayed on screen, panels after it never existed.
         ///
-        /// The four-argument constructor has been there since Unity 4 and is what the two-argument
-        /// one resolves to anyway. Resolved once through reflection rather than guarded by a
-        /// try/catch per call: which constructor exists is a property of the game, decided once,
-        /// not an exceptional condition to survive over and over.
+        /// 🔴 **And it cannot be probed for.** Reaching for it through reflection is worse than
+        /// calling it: Il2CppInterop GENERATES the constructors the metadata declares, so
+        /// <c>GetConstructor</c> finds one the native side does not have, and invoking it corrupts
+        /// memory — an AccessViolationException that takes the game down with no message, where the
+        /// direct call at least threw something catchable. Tried, and reverted, on the same game.
+        ///
+        /// The four-argument constructor has been there since Unity 4, is what the two-argument one
+        /// resolves to anyway, and does the same thing: mipChain false means one mip level.
         /// </summary>
         private static Texture2D NewTexture(int width, int height, TextureFormat format, bool mipChain)
-        {
-            if (!_probedNativeCtor)
-            {
-                _probedNativeCtor = true;
-                _nativeCtor = typeof(Texture2D).GetConstructor(new[]
-                {
-                    typeof(int), typeof(int), typeof(TextureFormat),
-                    typeof(int), typeof(bool), typeof(IntPtr),
-                });
-            }
-
-            if (_nativeCtor != null)
-            {
-                var made = _nativeCtor.Invoke(new object[]
-                {
-                    width, height, format, mipChain ? -1 : 1, false, IntPtr.Zero,
-                }) as Texture2D;
-
-                if (made != null) return made;
-            }
-
-            return new Texture2D(width, height, format, mipChain);
-        }
-
-        private static System.Reflection.ConstructorInfo _nativeCtor;
-        private static bool _probedNativeCtor;
+            => new Texture2D(width, height, format, mipChain);
 
         protected internal override void Internal_Blit(Texture tex, RenderTexture rt)
         {
