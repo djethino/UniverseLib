@@ -28,31 +28,14 @@ namespace UniverseLib.Runtime.Il2Cpp
             int srcWidth, int srcHeight, IntPtr dst, int dstElement, int dstMip, int dstX, int dstY);
 
         protected internal override Texture2D Internal_NewTexture2D(int width, int height)
-            => NewTexture(width, height, TextureFormat.RGBA32, false);
+        {
+            return new(width, height, TextureFormat.RGBA32, 1, false, IntPtr.Zero);
+        }
 
         protected internal override Texture2D Internal_NewTexture2D(int width, int height, TextureFormat textureFormat, bool mipChain)
-            => NewTexture(width, height, textureFormat, mipChain);
-
-        /// <summary>
-        /// The four-argument constructor, and only that one.
-        ///
-        /// 🔴 <c>Texture2D(int, int, TextureFormat, int, bool, IntPtr)</c> is NOT present in every
-        /// Unity version an IL2CPP game may be built with, and it was called unconditionally. On
-        /// Unity 2022.3.62f2 the first texture threw <c>MissingMethodException</c> — thrown while a
-        /// consumer was building its UI, so the whole construction aborted: panels made before it
-        /// stayed on screen, panels after it never existed.
-        ///
-        /// 🔴 **And it cannot be probed for.** Reaching for it through reflection is worse than
-        /// calling it: Il2CppInterop GENERATES the constructors the metadata declares, so
-        /// <c>GetConstructor</c> finds one the native side does not have, and invoking it corrupts
-        /// memory — an AccessViolationException that takes the game down with no message, where the
-        /// direct call at least threw something catchable. Tried, and reverted, on the same game.
-        ///
-        /// The four-argument constructor has been there since Unity 4, is what the two-argument one
-        /// resolves to anyway, and does the same thing: mipChain false means one mip level.
-        /// </summary>
-        private static Texture2D NewTexture(int width, int height, TextureFormat format, bool mipChain)
-            => new Texture2D(width, height, format, mipChain);
+        {
+            return new(width, height, textureFormat, mipChain ? -1 : 1, false, IntPtr.Zero);
+        }
 
         protected internal override void Internal_Blit(Texture tex, RenderTexture rt)
         {
