@@ -75,10 +75,59 @@ namespace UniverseLib.UI.Widgets
             // of translated buttons overflowed its parent instead of tightening — and a
             // HorizontalLayoutGroup always overflows to the right, leaving the last button glued
             // to the window edge while the first kept its margin.
-            float labelWidth = _label.preferredWidth;
+            // 🔴 **Whatever shares the row with the label takes room the label cannot have.**
+            // This class guarantees the label fits; measuring the label alone made that guarantee
+            // false the moment a caller laid anything beside it — icons, a scope strip, a counter.
+            // The button was then sized to the TEXT while the text only got what the neighbours
+            // left, and it ran straight out of the coloured rectangle. Adding a fixed allowance in
+            // the caller cannot fix it either: these two lines overwrite that allowance on the
+            // next label change, which is exactly when a long translated word needs it most.
+            float labelWidth = _label.preferredWidth + NeighboursWidth();
             float floor = Mathf.Max(_callerMinWidth, labelWidth);
             _layout.minWidth = floor;
             _layout.preferredWidth = Mathf.Max(floor, labelWidth + (Padding * 2f));
+        }
+
+        /// <summary>
+        /// How much of the row is taken by things that are not the label.
+        ///
+        /// Zero for an ordinary button, where the label is the only child — so nothing changes for
+        /// the buttons that have always worked. It only ever reports what a horizontal layout group
+        /// is actually arranging: without one, children are anchored rather than laid out in a row,
+        /// and they take no room from the label.
+        ///
+        /// ⚠ Reads each child through <see cref="LayoutUtility"/> rather than its painted width:
+        /// this runs before the first arrangement, when a rect is still zero and a preferred size
+        /// is already known.
+        /// </summary>
+        private float NeighboursWidth()
+        {
+            HorizontalLayoutGroup row = GetComponent<HorizontalLayoutGroup>();
+            if (row == null) return 0f;
+
+            float total = row.padding.left + row.padding.right;
+            int counted = 0;
+
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+                if (child == _label.transform || !child.gameObject.activeSelf) continue;
+
+                LayoutElement element = child.GetComponent<LayoutElement>();
+                if (element != null && element.ignoreLayout) continue;
+
+                RectTransform rect = child as RectTransform;
+                if (rect == null) continue;
+
+                total += LayoutUtility.GetPreferredWidth(rect);
+                counted++;
+            }
+
+            // One gap per neighbour: the spacing between the label and the first of them, and
+            // between each pair.
+            if (counted > 0) total += row.spacing * counted;
+
+            return total;
         }
 
         /// <summary>Re-evaluate now (e.g. after changing font size).</summary>
