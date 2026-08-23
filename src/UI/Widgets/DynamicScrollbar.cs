@@ -1,7 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
-#if CPP
+// ⚠ Il2CppInterop is ONE of the two IL2CPP chains; `#if CPP` covers both. This file is where that
+// mistake was first made, on 2026-01-01 — see FocusRing for the full account.
+#if INTEROP
 using Il2CppInterop.Runtime.Injection;
+#endif
+#if UNHOLLOWER
+using UnhollowerRuntimeLib;
 #endif
 
 namespace UniverseLib.UI.Widgets

@@ -2,8 +2,15 @@ using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-#if CPP
+// ⚠ Two IL2CPP chains, not one. `#if CPP` covers BOTH, and naming Il2CppInterop under it is what
+// broke the Unhollower configuration on 2026-01-01 and kept it broken until 2026-08-23 — a whole
+// build nobody compiled any more, so nothing said a word. `ClassInjector` exists in both; only its
+// namespace differs. Every other file in this library that touches IL2CPP already splits them.
+#if INTEROP
 using Il2CppInterop.Runtime.Injection;
+#endif
+#if UNHOLLOWER
+using UnhollowerRuntimeLib;
 #endif
 
 namespace UniverseLib.UI.Widgets
