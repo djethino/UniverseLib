@@ -81,6 +81,9 @@ namespace UniverseLib.UI
             public static Color InputBackground = new(0.212f, 0.255f, 0.325f, 1f);   // Slate blue
             public static Color InputBorder = new(0.29f, 0.333f, 0.396f, 1f);        // Lighter slate
             public static Color PlaceholderText = new(0.45f, 0.50f, 0.58f, 1f);
+            // The ring a field wears while it holds the caret — the accent, as the website and the
+            // Manager both draw it. On the EDGE and never on the fill: text sits on the fill.
+            public static Color FocusRing = new(0.596f, 0.063f, 0.980f, 1f);         // accent
 
             // Toggle colors - unchecked box must stand out from panel/card backgrounds
             // (rgb(30,41,57) card): previous 0.29-slate was too close to the background
@@ -578,6 +581,37 @@ namespace UniverseLib.UI
             return new ButtonRef(button);
         }
         
+        /// <summary>
+        /// Have a control light its border while it holds the caret.
+        ///
+        /// ⚠ Every failure here is a warning and never a throw. A field that does not light up
+        /// still takes text; an exception thrown while a panel is being built takes the whole
+        /// interface down with it, and the panels after it are never created at all.
+        /// </summary>
+        internal static void AttachFocusRing(GameObject target, GameObject border)
+        {
+            if (!target || !border) return;
+
+            Image ring = border.GetComponent<Image>();
+            if (!ring) return;
+
+#if CPP
+            Widgets.FocusRing.RegisterType();
+#endif
+            try
+            {
+                Widgets.FocusRing focus = target.AddComponent<Widgets.FocusRing>();
+                focus.Border = ring;
+                // Read from the border rather than assumed, so a caller that recoloured it keeps
+                // its own choice when the caret leaves.
+                focus.RestColour = ring.color;
+            }
+            catch (Exception ex)
+            {
+                Universe.LogWarning($"[UIFactory] Could not attach FocusRing: {ex.Message}");
+            }
+        }
+
         // Automatically deselect buttons when clicked.
         internal static void SetButtonDeselectListener(Button button)
         {
@@ -781,7 +815,7 @@ namespace UniverseLib.UI
             mainImage.type = Image.Type.Sliced;
             mainImage.color = Colors.InputBackground;
             SetShape(mainImage, Shapes.Control);
-            AddBorder(mainObj, Colors.InputBorder);
+            GameObject inputBorder = AddBorder(mainObj, Colors.InputBorder);
 
             InputField inputField = mainObj.AddComponent<InputField>();
             Navigation nav = inputField.navigation;
@@ -792,9 +826,13 @@ namespace UniverseLib.UI
             inputField.transition = Selectable.Transition.ColorTint;
             inputField.targetGraphic = mainImage;
 
-            // Subtle highlight when focused
+            // ⚠ Flat: the fill must NOT change. uGUI's own transition tints the graphic the text
+            // sits on, and a field that greys while you type in it is the one control here that
+            // fights its own content. Saying "you are here" is the border's job — see FocusRing.
             RuntimeHelper.Instance.Internal_SetColorBlock(inputField, new Color(1, 1, 1, 1),
-                new Color(1f, 1f, 1f, 1.0f), new Color(0.85f, 0.85f, 0.85f, 1.0f));
+                new Color(1f, 1f, 1f, 1.0f), new Color(1f, 1f, 1f, 1f));
+
+            AttachFocusRing(mainObj, inputBorder);
 
             GameObject textArea = CreateUIObject("TextArea", mainObj);
             textArea.AddComponent<RectMask2D>();
@@ -940,9 +978,12 @@ namespace UniverseLib.UI
             dropdownImage.color = Colors.DropdownBackground;
             dropdownImage.type = Image.Type.Sliced;
             SetShape(dropdownImage, Shapes.Control);
-            AddBorder(dropdownObj, Colors.InputBorder);
+            GameObject dropdownBorder = AddBorder(dropdownObj, Colors.InputBorder);
 
             dropdown = dropdownObj.AddComponent<Dropdown>();
+            // A dropdown is a field too: same ring, same reason. Attached after the component
+            // exists, since ISelectHandler only reaches an object the event system can select.
+            AttachFocusRing(dropdownObj, dropdownBorder);
             dropdown.targetGraphic = dropdownImage;
             dropdown.template = templateObj.GetComponent<RectTransform>();
             dropdown.captionText = labelText;
