@@ -33,6 +33,20 @@ namespace UniverseLib.UI.Widgets
         private string _lastText;
         private float _callerMinWidth = -1f;
 
+        // 🔴 **What the width actually depends on — not just the text.** Re-measuring only when the
+        // string changes assumes the same string is always the same number of pixels, and it is not:
+        // a substituted font, a font size, or a control laid beside the label all move it while the
+        // text stands still. A button then keeps a width computed for something it no longer holds,
+        // and the label runs out of the coloured rectangle with nothing to say so.
+        //
+        // ⚠ Reconciled from the state rather than driven by transitions. Watching for the events
+        // that *should* change a width means the one nobody thought of is invisible for good; asking
+        // "is the width still right" costs a comparison per frame and cannot miss.
+        private Font _lastFont;
+        private int _lastFontSize;
+        private int _lastNeighbours;
+        private float _written = -1f;
+
 #if CPP
         public ButtonLabelFitter(IntPtr ptr) : base(ptr) { }
 
@@ -53,7 +67,22 @@ namespace UniverseLib.UI.Widgets
         }
 #endif
 
-        private void LateUpdate()
+        /// <summary>
+        /// 🔴 **A safety net, not the mechanism.** An injected MonoBehaviour does not reliably get
+        /// Unity's callbacks on every IL2CPP runtime, and a width that only ever arrives through one
+        /// is a width that silently never arrives — which is what shipped: on a game where this
+        /// never ran, every button kept the size its layout group worked out on its own, and three
+        /// labels out of four ran outside their rectangle. The measurement is now DRIVEN
+        /// (<see cref="Apply"/>), called at the moment something changes; this keeps polling as a
+        /// second chance for whatever a caller forgets to announce.
+        /// </summary>
+        private void LateUpdate() => Apply();
+
+        /// <summary>
+        /// Measure now. Cheap and idempotent: it returns immediately unless something the width
+        /// depends on has actually moved, so calling it on every refresh costs nothing.
+        /// </summary>
+        public void Apply()
         {
             if (_label == null)
             {
@@ -71,8 +100,24 @@ namespace UniverseLib.UI.Widgets
             }
             if (_callerMinWidth < 0f) _callerMinWidth = _layout.minWidth;
 
-            if (_label.text == _lastText) return;
+            // Everything the measurement rests on. Counting the neighbours (rather than measuring
+            // them) keeps this cheap: their widths are fixed by their own LayoutElements, so their
+            // NUMBER is what changes when a caller adorns or strips a button.
+            int neighbours = NeighbourCount();
+            bool unchanged = _label.text == _lastText
+                             && _label.font == _lastFont
+                             && _label.fontSize == _lastFontSize
+                             && neighbours == _lastNeighbours
+                             // Somebody else writing this LayoutElement — a caller re-running its
+                             // own SetLayoutElement on a refresh — puts back a width that was right
+                             // before the label grew. Noticing costs one comparison.
+                             && Mathf.Approximately(_layout.minWidth, _written);
+            if (unchanged) return;
+
             _lastText = _label.text;
+            _lastFont = _label.font;
+            _lastFontSize = _label.fontSize;
+            _lastNeighbours = neighbours;
 
             // Two widths, not one. The breathing margin goes to preferredWidth, which a layout
             // group may give up when the row runs out of room; minWidth only guarantees the label
@@ -91,6 +136,32 @@ namespace UniverseLib.UI.Widgets
             float floor = Mathf.Max(_callerMinWidth, labelWidth);
             _layout.minWidth = floor;
             _layout.preferredWidth = Mathf.Max(floor, labelWidth + (Padding * 2f));
+
+            // What we just asked for, so the next pass can tell our own width from somebody else's.
+            _written = _layout.minWidth;
+        }
+
+        /// <summary>
+        /// How many things share the row with the label — the cheap half of <see cref="NeighboursWidth"/>,
+        /// used to notice that the row's composition changed.
+        /// </summary>
+        private int NeighbourCount()
+        {
+            if (GetComponent<HorizontalLayoutGroup>() == null) return 0;
+
+            int counted = 0;
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform child = transform.GetChild(i);
+                if (child == _label.transform || !child.gameObject.activeSelf) continue;
+
+                LayoutElement element = child.GetComponent<LayoutElement>();
+                if (element != null && element.ignoreLayout) continue;
+
+                counted++;
+            }
+
+            return counted;
         }
 
         /// <summary>
@@ -121,7 +192,14 @@ namespace UniverseLib.UI.Widgets
                 LayoutElement element = child.GetComponent<LayoutElement>();
                 if (element != null && element.ignoreLayout) continue;
 
-                RectTransform rect = child as RectTransform;
+                // 🔴 **GetComponent, never `as`.** `GetChild` hands back a wrapper typed `Transform`,
+                // and on IL2CPP a managed cast to `RectTransform` fails on it even though the object
+                // IS one — silently, returning null. It happened to succeed while the children were
+                // being built (their wrappers were still the ones just created) and failed on every
+                // later call, so this loop counted four neighbours at construction and none
+                // afterwards: 79 pixels of marks became 16 of padding, and the button was measured
+                // 63 pixels short with its label running out of the right-hand edge.
+                RectTransform rect = child.GetComponent<RectTransform>();
                 if (rect == null) continue;
 
                 total += LayoutUtility.GetPreferredWidth(rect);
