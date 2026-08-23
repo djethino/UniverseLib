@@ -98,6 +98,19 @@ namespace UniverseLib.UI.Widgets
                 _layout = GetComponent<LayoutElement>();
                 if (_layout == null) return; // width not layout-driven: nothing to widen
             }
+
+            // 🔴 **A button that lays its content out in a row is measured by its consumer — stay
+            // out of it.** Two things writing one width is how they end up disagreeing, and here
+            // they did: the consumer knows what it laid beside the label because it put it there,
+            // while this class has to walk the children to find out — a walk that returns "no
+            // neighbours at all" on IL2CPP, where a Transform does not cast to RectTransform. Every
+            // such button came out short by exactly what the walk missed, with nothing to say so.
+            //
+            // ⚠ The case this class is still for is the ORDINARY button, whose label is anchored to
+            // fill it: no group, nothing summing anything, and a button that would keep whatever
+            // minimum its caller asked for however long a translated label turned out to be.
+            if (GetComponent<HorizontalLayoutGroup>() != null) return;
+
             if (_callerMinWidth < 0f) _callerMinWidth = _layout.minWidth;
 
             // Everything the measurement rests on. Counting the neighbours (rather than measuring
