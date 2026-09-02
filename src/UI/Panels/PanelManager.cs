@@ -108,6 +108,24 @@ public class PanelManager
     }
 
     /// <summary>
+    /// Is this screen point inside one of the panels currently shown? Geometry only — the
+    /// question the input capture asks before letting a game raycaster answer a click that
+    /// lands on one of our windows. Overlay canvases, so no camera enters the test.
+    /// </summary>
+    public bool AnyPanelContains(Vector2 screenPoint)
+    {
+        for (int i = 0; i < panelInstances.Count; i++)
+        {
+            PanelBase panel = panelInstances[i];
+            if (panel == null || panel.Rect == null || panel.UIRoot == null || !panel.UIRoot.activeInHierarchy)
+                continue;
+            if (RectTransformUtility.RectangleContainsScreenPoint(panel.Rect, screenPoint, null))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Determines if the PanelManager should update "focus" (ie. heirarchy order).
     /// By default, returns true if user is clicking.
     /// </summary>

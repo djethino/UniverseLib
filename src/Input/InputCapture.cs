@@ -776,6 +776,21 @@ namespace UniverseLib.Input
                 }
             }
 
+            // 🔴 Under one of our open windows, a game raycaster is silenced whatever the capture
+            // option says. The option governs clicks OUTSIDE our windows; a click inside one
+            // belongs to it in every configuration — and without this the game could take it:
+            // a Screen Space - Camera canvas reports int.MaxValue as its sort-order priority to
+            // the EventSystem's raycast comparer, so a full-screen raycast target in it (a HUD
+            // backdrop, a vignette) wins over our overlay canvas however far above we render.
+            // Seen as: every button of the mod dead after entering a level, while hovering
+            // (a poll) and dragging (a poll) kept working — the clicks were landing on the game.
+            // Not counted as capture activity: the option did not do this, the window did.
+            if (PointerOverOwnPanel())
+            {
+                if (narrate) Narrate(__instance, "blocked (under one of our windows)");
+                return false;
+            }
+
             if (!Wants(CaptureKind.GameMenus, Raycasts, honourBypass: false))
             {
                 if (narrate) Narrate(__instance, "NOT captured, let through");
@@ -784,6 +799,22 @@ namespace UniverseLib.Input
 
             if (Raycasts != null) Raycasts.Silenced++;
             if (narrate) Narrate(__instance, "blocked");
+            return false;
+        }
+
+        /// <summary>Is the pointer over one of the consumer's open panels, by geometry?</summary>
+        static bool PointerOverOwnPanel()
+        {
+            Vector2 pos;
+            try { pos = InputManager.MousePosition; }
+            catch { return false; }
+            var bases = UI.UniversalUI.uiBases;
+            for (int i = 0; i < bases.Count; i++)
+            {
+                var panels = bases[i]?.Panels;
+                if (panels != null && panels.AnyPanelContains(pos))
+                    return true;
+            }
             return false;
         }
 
