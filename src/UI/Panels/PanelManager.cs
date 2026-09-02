@@ -114,15 +114,35 @@ public class PanelManager
     /// </summary>
     public bool AnyPanelContains(Vector2 screenPoint)
     {
+        // The same test UpdateFocus makes to decide which panel a click landed in — the one
+        // proven in every game this library runs in, rather than a second way of asking.
         for (int i = 0; i < panelInstances.Count; i++)
         {
             PanelBase panel = panelInstances[i];
-            if (panel == null || panel.Rect == null || panel.UIRoot == null || !panel.UIRoot.activeInHierarchy)
+            if (panel == null || panel.Rect == null || !panel.Enabled)
                 continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(panel.Rect, screenPoint, null))
+            Vector3 local = panel.Rect.InverseTransformPoint(screenPoint);
+            if (panel.Rect.rect.Contains(local))
                 return true;
         }
         return false;
+    }
+
+    /// <summary>The shown panels and their screen rectangles, for a diagnostic line.</summary>
+    public string DescribePanels()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < panelInstances.Count; i++)
+        {
+            PanelBase panel = panelInstances[i];
+            if (panel == null || panel.Rect == null || !panel.Enabled) continue;
+            Vector3 min = panel.Rect.TransformPoint(panel.Rect.rect.min);
+            Vector3 max = panel.Rect.TransformPoint(panel.Rect.rect.max);
+            if (sb.Length > 0) sb.Append(", ");
+            sb.Append(panel.Name).Append(" [").Append(min.x.ToString("F0")).Append(',').Append(min.y.ToString("F0"))
+              .Append(" → ").Append(max.x.ToString("F0")).Append(',').Append(max.y.ToString("F0")).Append(']');
+        }
+        return sb.Length == 0 ? "no panel shown" : sb.ToString();
     }
 
     /// <summary>

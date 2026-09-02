@@ -311,9 +311,20 @@ namespace UniverseLib.Input
             Universe.Log($"[InputCapture] raycast by '{caster.name}' ({caster.GetType().Name}) → {verdict}");
         }
 
+        /// <summary>
+        /// How many raycasts any raycaster ran during the previous frame — the sign that some
+        /// EventSystem is processing the pointer at all. A module that ignores the mouse (a
+        /// game in play, pointer input switched off) raycasts nothing, frame after frame, and
+        /// then nobody can click a window of ours: this number is how a consumer can tell.
+        /// </summary>
+        public static int RaycastsLastFrame { get; private set; }
+        static int _raycastsThisFrame;
+
         internal static void Tick()
         {
             if (_diagnoseFrames > 0) _diagnoseFrames--;
+            RaycastsLastFrame = _raycastsThisFrame;
+            _raycastsThisFrame = 0;
 
             foreach (var s in _strategies)
             {
@@ -752,6 +763,7 @@ namespace UniverseLib.Input
             if (__instance == null)
                 return true;
 
+            _raycastsThisFrame++;
             bool narrate = _diagnoseFrames > 0 && _diagnoseLines > 0;
 
             // Ours goes through, always. Compared by hierarchy rather than by a registry: panels,
@@ -793,13 +805,33 @@ namespace UniverseLib.Input
 
             if (!Wants(CaptureKind.GameMenus, Raycasts, honourBypass: false))
             {
-                if (narrate) Narrate(__instance, "NOT captured, let through");
+                if (narrate)
+                {
+                    Narrate(__instance, "NOT captured, let through");
+                    // Where the pointer was, against where our panels are — the only way to tell
+                    // "no panel under it" from "the test cannot see the panel" (bench).
+                    Universe.Log($"[InputCapture]   pointer {InputManager.MousePosition.x:F0},{InputManager.MousePosition.y:F0} — panels: {DescribeOwnPanels()}");
+                }
                 return true;
             }
 
             if (Raycasts != null) Raycasts.Silenced++;
             if (narrate) Narrate(__instance, "blocked");
             return false;
+        }
+
+        static string DescribeOwnPanels()
+        {
+            var bases = UI.UniversalUI.uiBases;
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < bases.Count; i++)
+            {
+                var panels = bases[i]?.Panels;
+                if (panels == null) continue;
+                if (sb.Length > 0) sb.Append(" | ");
+                sb.Append(panels.DescribePanels());
+            }
+            return sb.Length == 0 ? "no UI base" : sb.ToString();
         }
 
         /// <summary>Is the pointer over one of the consumer's open panels, by geometry?</summary>
