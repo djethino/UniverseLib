@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -30,6 +31,26 @@ namespace UniverseLib
             GameObject.DontDestroyOnLoad(obj);
             obj.hideFlags |= HideFlags.HideAndDontSave;
             Instance = obj.AddComponent<UniversalBehaviour>();
+        }
+
+        static IEnumerator pendingStartup;
+
+        /// <summary>
+        /// Start this coroutine on the first frame the engine runs this behaviour (Unity's
+        /// Start), which may be later than now when Init is called before the engine is up.
+        /// </summary>
+        internal static void RunOnFirstFrame(IEnumerator routine)
+        {
+            pendingStartup = routine;
+        }
+
+        internal void Start()
+        {
+            IEnumerator routine = pendingStartup;
+            pendingStartup = null;
+            // Through the runtime provider: on IL2CPP a managed IEnumerator is not Unity's.
+            if (routine != null)
+                RuntimeHelper.Instance.Internal_StartCoroutine(routine);
         }
 
         internal void Update()

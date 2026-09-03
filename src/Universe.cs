@@ -104,8 +104,13 @@ public static class Universe
             ReflectionUtility.Init();
             RuntimeHelper.Init();
 
-            // Begin the startup delay coroutine
-            RuntimeHelper.Instance.Internal_StartCoroutine(SetupCoroutine());
+            // The startup delay coroutine begins on the behaviour's first frame (its Start),
+            // not here: a loader can call Init before the engine has run at all — BepInEx 5
+            // runs plugin Awake from Application's static constructor — and starting a
+            // coroutine at that moment is a native crash on Unity 6000.5 (fine before).
+            // The coroutine yields a frame and waits the startup delay anyway, so nothing
+            // downstream sees a difference.
+            UniversalBehaviour.RunOnFirstFrame(SetupCoroutine());
 
             Log($"Finished UniverseLib initial setup.");
         }
