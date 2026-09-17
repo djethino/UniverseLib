@@ -103,6 +103,20 @@ namespace UniverseLib.UI.Widgets
             }
         }
 
+        /// <summary>
+        /// The height the whole text asks for at the current width, measured now — the same
+        /// measure this scroller sizes its content by. For a caller dividing a body between
+        /// this field and other scroll areas: the field's own label only carries the lines in
+        /// view, so its preferred height says nothing about the text, and the generation
+        /// settings this uses cannot be built from a managed assembly under IL2CPP.
+        /// </summary>
+        public float MeasureContentHeight()
+        {
+            if (lastText == null) lastText = InputField?.Text ?? "";
+            ProcessInputText();
+            return desiredContentHeight;
+        }
+
         internal void OnTextChanged(string text)
         {
             lastText = text;
