@@ -1263,6 +1263,12 @@ namespace UniverseLib.Input
 
             public override void Tick()
             {
+                try { Reconcile(); }
+                catch (Exception ex) { GiveUp(ex.GetType().Name + ": " + ex.Message); }
+            }
+
+            void Reconcile()
+            {
                 bool keys = Wants(CaptureKind.Keyboard, null);
                 bool clicks = Wants(CaptureKind.GameClicks, null);
                 bool motion = Wants(CaptureKind.MouseAxes, null);
@@ -1283,7 +1289,7 @@ namespace UniverseLib.Input
 
                 object list;
                 try { list = m_listEnabled.Invoke(null, null); }
-                catch (Exception ex) { Universe.LogWarning($"[InputCapture] {Name}: listing the enabled actions failed: {ex.Message}"); return; }
+                catch (Exception ex) { GiveUp("listing the enabled actions failed: " + ex.Message); return; }
 
                 foreach (object a in Items(list))
                 {
@@ -1312,6 +1318,20 @@ namespace UniverseLib.Input
                     if (back != null)
                         foreach (var id in back) { Toggle(held[id].Action, off: false); held.Remove(id); }
                 }
+            }
+
+            /// <summary>
+            /// Stop for the session, and say so once. This runs every frame while a UI holds
+            /// input: a failure that repeated would write a warning per frame and bury the log,
+            /// and one that cannot list the actions will not start listing them next frame.
+            /// Whatever was taken is given back first.
+            /// </summary>
+            void GiveUp(string why)
+            {
+                Release();
+                Available = false;
+                Reason = "This game's Input System actions could not be read: " + why;
+                Universe.LogWarning($"[InputCapture] {Name}: {why} — switched off for this session");
             }
 
             public override void Release()
