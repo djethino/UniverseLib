@@ -800,6 +800,9 @@ namespace UniverseLib.UI
             return toggleObj;
         }
 
+        /// <summary>Space between an input field's frame and its text, horizontally and vertically.</summary>
+        public const float InputTextInsetX = 8f, InputTextInsetY = 2f;
+
         /// <summary>
         /// Create a standard InputField control and an InputFieldRef wrapper for it.
         /// </summary>
@@ -837,11 +840,13 @@ namespace UniverseLib.UI
             GameObject textArea = CreateUIObject("TextArea", mainObj);
             textArea.AddComponent<RectMask2D>();
 
+            // Inset from the frame, like a dropdown's text: flush, the first letter sat on the border
+            // and under its rounded corner — the text and the placeholder both live in this area.
             RectTransform textAreaRect = textArea.GetComponent<RectTransform>();
             textAreaRect.anchorMin = Vector2.zero;
             textAreaRect.anchorMax = Vector2.one;
-            textAreaRect.offsetMin = Vector2.zero;
-            textAreaRect.offsetMax = Vector2.zero;
+            textAreaRect.offsetMin = new Vector2(InputTextInsetX, InputTextInsetY);
+            textAreaRect.offsetMax = new Vector2(-InputTextInsetX, -InputTextInsetY);
 
             GameObject placeHolderObj = CreateUIObject("Placeholder", textArea);
             Text placeholderText = placeHolderObj.AddComponent<Text>();

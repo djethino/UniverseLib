@@ -27,8 +27,10 @@ namespace UniverseLib.Input
     ///
     ///   game reads legacy,       we read legacy  → patches work
     ///   game reads Input System, we read legacy  → taking its devices works
-    ///   game reads Input System, we read it too  → NEITHER works yet: cutting the source would
-    ///                                              cut the menu's own input with it
+    ///   game reads Input System, we read it too  → the devices cannot be taken (the menu's own
+    ///                                              input would go with them): the reads are
+    ///                                              patched, and a game on ACTIONS has its actions
+    ///                                              switched off (InputSystemActionStrategy)
     ///
     /// Hence: no table of what works, anywhere. Each strategy probes at startup and reports, and a
     /// caller asks <see cref="CanCapture"/> / <see cref="WhyNot"/> per intention — which is exactly
@@ -277,6 +279,8 @@ namespace UniverseLib.Input
             _strategies.Add(_raycasts);
             _isReads = new InputSystemReadStrategy();
             _strategies.Add(_isReads);
+            _isActions = new InputSystemActionStrategy();
+            _strategies.Add(_isActions);
 
             foreach (var s in _strategies)
             {
@@ -1151,6 +1155,363 @@ namespace UniverseLib.Input
                 }
                 return args;
             }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Strategy 6 — switch off the game's Input System ACTIONS
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        static InputSystemActionStrategy _isActions;
+
+        /// <summary>
+        /// Disables the game's enabled Input System actions bound to what a UI holds, and gives
+        /// back exactly those.
+        /// </summary>
+        /// <remarks>
+        /// The configuration the header calls "neither works yet": the game reads through the Input
+        /// System and so does the menu. A game built on ACTIONS never reads a key or a button —
+        /// it asks an action (<c>triggered</c>, <c>ReadValue</c>) or is called back by one
+        /// (<c>performed</c>), evaluated inside the Input System from the device state. So the read
+        /// patches never see it, and the devices cannot be taken without taking the menu's own.
+        /// Measured: typing in a field of ours moved a dialogue on, with every other strategy
+        /// reporting "ready, but the game never came through it".
+        ///
+        /// An action switched off answers nothing on any of those three roads at once, and the
+        /// menu's input is untouched: our module reads its own actions, which are never switched
+        /// off here (<see cref="OurActions"/>).
+        ///
+        /// ⚠ Reconciled from the STATE every frame, not driven by transitions: an action the game
+        /// switches back on is switched off again on the next frame. And the game's own decisions
+        /// while we hold stand: one it switches off itself (a cutscene disabling the player's map)
+        /// is struck from what we give back, so releasing never turns on what the game wanted off.
+        /// </remarks>
+        class InputSystemActionStrategy : Strategy
+        {
+            public override string Name { get { return "Input System actions"; } }
+
+            MethodInfo m_listEnabled;
+            PropertyInfo p_enabled, p_id, p_actionMap, p_controls, p_mapId, p_mapActions, p_mapAsset;
+            PropertyInfo p_assetMaps, p_controlDevice, p_deviceLayout, p_controlLayout;
+            MethodInfo m_enable, m_disable;
+
+            // What we switched off, by action id: the action, its map's id, and what it reads.
+            sealed class Held { public object Action; public string MapId; }
+            readonly Dictionary<string, Held> held = new Dictionary<string, Held>();
+
+            // What each action reads, by id — its bindings do not change while it is enabled.
+            readonly Dictionary<string, Reads> readsOf = new Dictionary<string, Reads>();
+
+            [Flags] enum Reads { None = 0, Keys = 1, MouseButtons = 2, MouseMotion = 4 }
+
+            // Set around our own Enable/Disable, so the patches do not take them for the game's.
+            internal static bool SelfToggling;
+
+            public override bool Serves(CaptureKind kind)
+            {
+                return kind == CaptureKind.Keyboard || kind == CaptureKind.GameClicks || kind == CaptureKind.MouseAxes;
+            }
+
+            public override void Probe()
+            {
+                Type system = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputSystem");
+                Type action = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputAction");
+                Type map = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputActionMap");
+                Type asset = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputActionAsset");
+                Type control = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputControl");
+                Type device = ReflectionUtility.GetTypeByName("UnityEngine.InputSystem.InputDevice");
+                if (system == null || action == null || map == null || control == null || device == null)
+                {
+                    Reason = "This game does not use Unity's Input System package.";
+                    return;
+                }
+
+                m_listEnabled = system.GetMethod("ListEnabledActions", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+                p_enabled = action.GetProperty("enabled");
+                p_id = action.GetProperty("id");
+                p_actionMap = action.GetProperty("actionMap");
+                p_controls = action.GetProperty("controls");
+                m_enable = action.GetMethod("Enable", Type.EmptyTypes);
+                m_disable = action.GetMethod("Disable", Type.EmptyTypes);
+                p_mapId = map.GetProperty("id");
+                p_mapActions = map.GetProperty("actions");
+                p_mapAsset = map.GetProperty("asset");
+                p_assetMaps = asset?.GetProperty("actionMaps");
+                p_controlDevice = control.GetProperty("device");
+                p_controlLayout = control.GetProperty("layout");
+                p_deviceLayout = device.GetProperty("layout");
+
+                var missing = new List<string>();
+                if (m_listEnabled == null) missing.Add("InputSystem.ListEnabledActions");
+                if (p_enabled == null || p_id == null || p_controls == null) missing.Add("InputAction.enabled/id/controls");
+                if (m_enable == null || m_disable == null) missing.Add("InputAction.Enable/Disable");
+                if (p_controlDevice == null || p_deviceLayout == null) missing.Add("InputControl.device.layout");
+                if (missing.Count > 0)
+                {
+                    Reason = "This game's Input System is missing " + string.Join(", ", missing.ToArray()) + ".";
+                    return;
+                }
+
+                // The game's own switching-off, so a release never undoes it. Missing any of these
+                // only loses that courtesy: the strategy still works, and says what it could not see.
+                var prefix = AccessTools.Method(typeof(InputCapture), nameof(Prefix_GameDisabled));
+                if (Universe.Patch(action, "Disable", MethodType.Normal, Type.EmptyTypes, prefix: prefix)) Hooked.Add("InputAction.Disable"); else Missed.Add("InputAction.Disable");
+                if (Universe.Patch(map, "Disable", MethodType.Normal, Type.EmptyTypes, prefix: prefix)) Hooked.Add("InputActionMap.Disable"); else Missed.Add("InputActionMap.Disable");
+                if (asset != null && Universe.Patch(asset, "Disable", MethodType.Normal, Type.EmptyTypes, prefix: prefix)) Hooked.Add("InputActionAsset.Disable"); else Missed.Add("InputActionAsset.Disable");
+
+                Available = true;
+            }
+
+            public override void Tick()
+            {
+                bool keys = Wants(CaptureKind.Keyboard, null);
+                bool clicks = Wants(CaptureKind.GameClicks, null);
+                bool motion = Wants(CaptureKind.MouseAxes, null);
+
+                if (!keys && !clicks && !motion)
+                {
+                    Release();
+                    return;
+                }
+                Asked++;
+
+                Reads wanted = (keys ? Reads.Keys : 0) | (clicks ? Reads.MouseButtons : 0) | (motion ? Reads.MouseMotion : 0);
+                // Read once per holding episode: our module does not change its actions under us.
+                var ours = ours_ ?? (ours_ = OurActions());
+                // 🔴 Nothing of ours found means our module is not there (yet) — never guess: with
+                // no list to spare, the menu's own clicks would be switched off with the game's.
+                if (ours.Count == 0) { ours_ = null; return; }
+
+                object list;
+                try { list = m_listEnabled.Invoke(null, null); }
+                catch (Exception ex) { Universe.LogWarning($"[InputCapture] {Name}: listing the enabled actions failed: {ex.Message}"); return; }
+
+                foreach (object a in Items(list))
+                {
+                    if (a == null) continue;
+                    string id = IdOf(p_id, a);
+                    if (id == null || ours.Contains(id)) continue;
+                    if ((ReadsOf(id, a) & wanted) == 0) continue;
+
+                    if (Toggle(a, off: true))
+                    {
+                        if (!held.ContainsKey(id)) Silenced++;
+                        held[id] = new Held { Action = a, MapId = MapIdOf(a) };
+                    }
+                }
+
+                // What is held but no longer wanted goes back — the kinds change independently.
+                if (held.Count > 0)
+                {
+                    List<string> back = null;
+                    foreach (var kv in held)
+                    {
+                        Reads r;
+                        if (readsOf.TryGetValue(kv.Key, out r) && (r & wanted) != 0) continue;
+                        (back ?? (back = new List<string>())).Add(kv.Key);
+                    }
+                    if (back != null)
+                        foreach (var id in back) { Toggle(held[id].Action, off: false); held.Remove(id); }
+                }
+            }
+
+            public override void Release()
+            {
+                ours_ = null;
+                if (held.Count == 0) return;
+                foreach (var h in held.Values)
+                    Toggle(h.Action, off: false);
+                held.Clear();
+                // Bindings may change while nothing is held (a rebinding screen): read them again.
+                readsOf.Clear();
+            }
+
+            HashSet<string> ours_;
+
+            /// <summary>The game switched something off itself: it stays off when we let go.</summary>
+            internal void ForgetGameDisabled(object instance)
+            {
+                if (held.Count == 0 || instance == null) return;
+
+                string id = IdOf(p_id, instance);
+                if (id != null && held.Remove(id)) return;
+
+                // A map: everything held from it. An asset: everything held from its maps.
+                var maps = new HashSet<string>();
+                string mapId = IdOf(p_mapId, instance);
+                if (mapId != null) maps.Add(mapId);
+                else if (p_assetMaps != null)
+                {
+                    object assetMaps = null;
+                    try { assetMaps = p_assetMaps.GetValue(instance, null); } catch { }
+                    foreach (object m in Items(assetMaps))
+                    {
+                        string mid = IdOf(p_mapId, m);
+                        if (mid != null) maps.Add(mid);
+                    }
+                }
+                if (maps.Count == 0) return;
+
+                var gone = new List<string>();
+                foreach (var kv in held)
+                    if (kv.Value.MapId != null && maps.Contains(kv.Value.MapId)) gone.Add(kv.Key);
+                foreach (var g in gone) held.Remove(g);
+            }
+
+            bool Toggle(object action, bool off)
+            {
+                SelfToggling = true;
+                try
+                {
+                    (off ? m_disable : m_enable).Invoke(action, null);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Universe.LogWarning($"[InputCapture] {Name}: could not {(off ? "switch off" : "give back")} an action: {ex.Message}");
+                    return false;
+                }
+                finally { SelfToggling = false; }
+            }
+
+            /// <summary>
+            /// What an action reads — keys, mouse buttons, mouse motion — from the controls it is
+            /// bound to, by device and control layout (a runtime type test does not survive
+            /// IL2CPP, where the object is typed by what the property declares).
+            /// </summary>
+            Reads ReadsOf(string id, object action)
+            {
+                Reads r;
+                if (readsOf.TryGetValue(id, out r)) return r;
+
+                r = Reads.None;
+                object controls = null;
+                try { controls = p_controls.GetValue(action, null); } catch { }
+                foreach (object c in Items(controls))
+                {
+                    string deviceLayout = null, controlLayout = null;
+                    try
+                    {
+                        object dev = p_controlDevice.GetValue(c, null);
+                        deviceLayout = dev == null ? null : p_deviceLayout.GetValue(dev, null) as string;
+                        controlLayout = p_controlLayout?.GetValue(c, null) as string;
+                    }
+                    catch { }
+                    if (deviceLayout == null) continue;
+
+                    if (deviceLayout.IndexOf("Keyboard", StringComparison.OrdinalIgnoreCase) >= 0)
+                        r |= Reads.Keys;
+                    else if (deviceLayout.IndexOf("Mouse", StringComparison.OrdinalIgnoreCase) >= 0)
+                        r |= string.Equals(controlLayout, "Button", StringComparison.OrdinalIgnoreCase) ? Reads.MouseButtons : Reads.MouseMotion;
+                }
+
+                readsOf[id] = r;
+                return r;
+            }
+
+            /// <summary>
+            /// Every action our own UI input module reads — its action references, its asset, and
+            /// the map UniverseLib builds for it. Read from the module at run time rather than
+            /// assumed: whether it runs on that map or on the Input System's default actions depends
+            /// on the version (AssignDefaultActions replaces them when no asset is set).
+            /// </summary>
+            HashSet<string> OurActions()
+            {
+                var ours = new HashSet<string>();
+                var handler = InputManager.inputHandler as InputSystem;
+                if (handler == null) return ours;
+
+                AddMap(ours, handler.UIActionMap);
+
+                object module = handler.UIInputModule;
+                Type moduleType = handler.TInputSystemUIInputModule;
+                if (module == null || moduleType == null) return ours;
+                object typed = module.TryCast(moduleType);
+
+                foreach (var p in moduleType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (p.PropertyType.Name == "InputActionReference" && p.GetIndexParameters().Length == 0)
+                    {
+                        try
+                        {
+                            object reference = p.GetValue(typed, null);
+                            object action = reference?.GetType().GetProperty("action")?.GetValue(reference, null);
+                            string id = action == null ? null : IdOf(p_id, action);
+                            if (id != null) ours.Add(id);
+                        }
+                        catch { }
+                    }
+                    else if (p.Name == "actionsAsset" && p_assetMaps != null)
+                    {
+                        try
+                        {
+                            object asset = p.GetValue(typed, null);
+                            object maps = asset == null ? null : p_assetMaps.GetValue(asset, null);
+                            foreach (object m in Items(maps)) AddMap(ours, m);
+                        }
+                        catch { }
+                    }
+                }
+                return ours;
+            }
+
+            void AddMap(HashSet<string> into, object map)
+            {
+                if (map == null || p_mapActions == null) return;
+                object actions = null;
+                try { actions = p_mapActions.GetValue(map, null); } catch { }
+                foreach (object a in Items(actions))
+                {
+                    string id = IdOf(p_id, a);
+                    if (id != null) into.Add(id);
+                }
+            }
+
+            string MapIdOf(object action)
+            {
+                try
+                {
+                    object map = p_actionMap?.GetValue(action, null);
+                    return map == null ? null : IdOf(p_mapId, map);
+                }
+                catch { return null; }
+            }
+
+            /// <summary>A Guid property as text — a key that compares alike on Mono and IL2CPP.</summary>
+            static string IdOf(PropertyInfo idProp, object instance)
+            {
+                if (idProp == null || instance == null || !idProp.DeclaringType.IsInstanceOfType(instance)) return null;
+                try { return idProp.GetValue(instance, null)?.ToString(); }
+                catch { return null; }
+            }
+
+            /// <summary>
+            /// The elements of a list the Input System hands back: a managed list or array on Mono,
+            /// an interop list or a ReadOnlyArray (Count + indexer) otherwise.
+            /// </summary>
+            static IEnumerable<object> Items(object list)
+            {
+                if (list == null) yield break;
+                if (list is System.Collections.IEnumerable enumerable && !(list is string))
+                {
+                    foreach (object o in enumerable) yield return o;
+                    yield break;
+                }
+                var t = list.GetType();
+                var count = t.GetProperty("Count");
+                var item = t.GetProperty("Item");
+                if (count == null || item == null) yield break;
+                int n = Convert.ToInt32(count.GetValue(list, null));
+                for (int i = 0; i < n; i++)
+                    yield return item.GetValue(list, new object[] { i });
+            }
+        }
+
+        /// <summary>The game switching an action, a map or a whole asset off itself.</summary>
+        public static void Prefix_GameDisabled(object __instance)
+        {
+            if (InputSystemActionStrategy.SelfToggling || _isActions == null) return;
+            try { _isActions.ForgetGameDisabled(__instance); }
+            catch (Exception ex) { Universe.LogWarning($"[InputCapture] Input System actions: {ex.Message}"); }
         }
     }
 }

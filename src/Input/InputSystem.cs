@@ -102,7 +102,9 @@ public class InputSystem : IHandleInput
 
     // UI input action maps
     Type? t_InputExtensions;
-    object? UIActionMap;
+    // The map our module reads (mouse only). InputCapture keeps its actions running while it
+    // takes the game's — see InputCapture.InputSystemActionStrategy.
+    internal object? UIActionMap;
     MethodInfo? m_UI_Enable;
     PropertyInfo? p_actionsAsset;
 
