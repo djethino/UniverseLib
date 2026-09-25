@@ -85,6 +85,11 @@ namespace UniverseLib.UI.Widgets
             GameObject selected = events ? events.currentSelectedGameObject : null;
             bool focused = selected && (selected == gameObject || selected.transform.IsChildOf(transform));
 
+            // ⚠ A dropdown is never selected any more (EventSystemHelper refuses our controls as
+            // the game's selection), so it is lit while its list is open instead — the list Unity
+            // instantiates under it, by that name, for as long as it is shown.
+            if (!focused && transform.Find("Dropdown List")) focused = true;
+
             if (focused == _lit) return;
 
             _lit = focused;

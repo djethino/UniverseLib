@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using UniverseLib.Config;
 using UniverseLib.Runtime;
 using UniverseLib.UI;
@@ -332,6 +333,18 @@ namespace UniverseLib.Input
 
         internal static bool Prefix_EventSystem_SetSelectedGameObject(GameObject __0)
         {
+            // 🔴 **Our controls are never the game's selection — text fields excepted.** Clicking a
+            // Selectable makes it the EventSystem's selection, and the selection is the one door
+            // through which a game reaches an object it does not own: a pause menu that slides and
+            // scales "its" selected button (DOAnchorPosX on whatever is selected) slid ours off the
+            // window, and they seemed to flee the pointer. Refused here, once, for every control
+            // however it was built; a click is delivered without it. A text field keeps it: the
+            // keystrokes only go to the selected object.
+            if (__0 && UniversalUI.CanvasRoot
+                && __0.transform.root.gameObject.GetInstanceID() == UniversalUI.CanvasRoot.GetInstanceID()
+                && !__0.GetComponent<InputField>())
+                return false;
+
             // ⚠ AnyUIShowing alone is not the right question. It goes false the instant the last
             // panel closes — which is exactly when the game's button gets re-selected and then
             // submitted to, delivering the click that closed our window to whatever sat behind it.
