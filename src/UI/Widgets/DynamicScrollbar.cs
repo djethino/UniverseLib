@@ -136,7 +136,10 @@ namespace UniverseLib.UI.Widgets
             {
                 // Adjust viewport width based on scrollbar visibility
                 // UniverseLib sets offsetMax.x = -28 by default for scrollbar space
-                _viewport.offsetMax = new Vector2(_scrollbarVisible ? -ScrollbarWidth : 0f, 0f);
+                // ⚠ The width only: the height is a consumer's to move — a scroll's end giving a
+                // few pixels shrinks the viewport from the top, and resetting y here would snap it
+                // back mid-bounce and leave the consumer's own record of it wrong.
+                _viewport.offsetMax = new Vector2(_scrollbarVisible ? -ScrollbarWidth : 0f, _viewport.offsetMax.y);
             }
         }
 
