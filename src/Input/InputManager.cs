@@ -139,6 +139,30 @@ namespace UniverseLib.Input
         }
 
         /// <summary>
+        /// This frame's wheel as it was BEFORE <see cref="UniversalUI"/> reset the axes against
+        /// click-through — for a consumer that reads it later in the frame.
+        /// </summary>
+        /// <remarks>
+        /// ⚠ UniversalUI.Update resets every axis when the wheel turns over a menu, so the game
+        /// underneath does not zoom or scroll too. Anything reading <see cref="MouseScrollDelta"/>
+        /// after that sees zero: the EventSystem got its turn first and scrolled the page, while a
+        /// mod's own per-frame read of the wheel (a slider under the pointer) never saw a single
+        /// turn. The value is noted just before the reset and served for the rest of that frame.
+        /// </remarks>
+        public static Vector2 FrameScrollDelta
+            => frameWheelAt == Time.frameCount ? frameWheel : MouseScrollDelta;
+
+        static Vector2 frameWheel;
+        static int frameWheelAt = -1;
+
+        /// <summary>Noted by UniversalUI.Update before it resets the axes.</summary>
+        internal static void NoteFrameWheel(Vector2 wheel)
+        {
+            frameWheel = wheel;
+            frameWheelAt = Time.frameCount;
+        }
+
+        /// <summary>
         /// Returns true if the provided KeyCode was pressed this frame. 
         /// Translates KeyCodes into Key if InputSystem is being used.
         /// </summary>

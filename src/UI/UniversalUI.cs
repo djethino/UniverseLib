@@ -134,6 +134,9 @@ public static class UniversalUI
         if (!AnyUIShowing)
             return;
 
+        // The wheel is noted before the reset below erases it — see InputManager.FrameScrollDelta.
+        InputManager.NoteFrameWheel(InputManager.MouseScrollDelta);
+
         // Prevent click-through
         if (EventSys.IsPointerOverGameObject())
         {
