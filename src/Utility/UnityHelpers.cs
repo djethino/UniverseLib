@@ -14,6 +14,14 @@ namespace UniverseLib.Utility
 {
     public static class UnityHelpers
     {
+        /// <summary>
+        /// Finds a child by name or path, as <see cref="Transform.Find(string)"/>. The host may replace
+        /// it: on Unity 2023.1+ IL2CPP a game that never calls Transform.Find has it rebuilt by the
+        /// interop around a span its runtime lacks, and every call throws MissingMethodException —
+        /// the host then calls the engine's native entry instead (UnityGameTranslator: TransformFind).
+        /// </summary>
+        public static Func<Transform, string, Transform> FindChild = (transform, path) => transform.Find(path);
+
         // Time helpers, can't use Time.time since timeScale will affect it.
 
         /// <summary>

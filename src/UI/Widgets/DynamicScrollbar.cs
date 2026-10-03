@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UniverseLib.Utility;
 // ⚠ Il2CppInterop is ONE of the two IL2CPP chains; `#if CPP` covers both. This file is where that
 // mistake was first made, on 2026-01-01 — see FocusRing for the full account.
 #if INTEROP
@@ -82,10 +83,10 @@ namespace UniverseLib.UI.Widgets
                 return;
             }
 
-            var viewportTransform = transform.Find("Viewport");
+            var viewportTransform = UnityHelpers.FindChild(transform, "Viewport");
             _viewport = viewportTransform != null ? viewportTransform.GetComponent<RectTransform>() : null;
             _content = _scrollRect.content;
-            var scrollbarTransform = transform.Find("AutoSliderScrollbar");
+            var scrollbarTransform = UnityHelpers.FindChild(transform, "AutoSliderScrollbar");
             _scrollbarObj = scrollbarTransform != null ? scrollbarTransform.gameObject : null;
 
             if (_viewport == null)

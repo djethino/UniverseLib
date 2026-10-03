@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UniverseLib.Utility;
 // ⚠ Two IL2CPP chains, not one. `#if CPP` covers BOTH, and naming Il2CppInterop under it is what
 // broke the Unhollower configuration on 2026-01-01 and kept it broken until 2026-08-23 — a whole
 // build nobody compiled any more, so nothing said a word. `ClassInjector` exists in both; only its
@@ -88,7 +89,7 @@ namespace UniverseLib.UI.Widgets
             // ⚠ A dropdown is never selected any more (EventSystemHelper refuses our controls as
             // the game's selection), so it is lit while its list is open instead — the list Unity
             // instantiates under it, by that name, for as long as it is shown.
-            if (!focused && transform.Find("Dropdown List")) focused = true;
+            if (!focused && UnityHelpers.FindChild(transform, "Dropdown List")) focused = true;
 
             if (focused == _lit) return;
 
