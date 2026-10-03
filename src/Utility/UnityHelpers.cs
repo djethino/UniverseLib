@@ -22,6 +22,13 @@ namespace UniverseLib.Utility
         /// </summary>
         public static Func<Transform, string, Transform> FindChild = (transform, path) => transform.Find(path);
 
+        /// <summary>
+        /// Makes a named GameObject, as <c>new GameObject(name)</c>. The host may replace it, for the
+        /// same reason as <see cref="FindChild"/>: on Unity 2023.1+ IL2CPP a stripped GameObject(string)
+        /// throws at every call (UnityGameTranslator: EngineStrings).
+        /// </summary>
+        public static Func<string, GameObject> NewGameObject = name => new GameObject(name);
+
         // Time helpers, can't use Time.time since timeScale will affect it.
 
         /// <summary>

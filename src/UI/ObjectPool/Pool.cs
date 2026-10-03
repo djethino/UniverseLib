@@ -1,4 +1,5 @@
-﻿using System;
+﻿using UniverseLib.Utility;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -103,7 +104,7 @@ namespace UniverseLib.UI.ObjectPool
 
             //UniverseLib.Log($"Creating Pool<{typeof(T).Name}>");
 
-            InactiveHolder = new GameObject($"PoolHolder_{typeof(T).Name}");
+            InactiveHolder = UnityHelpers.NewGameObject($"PoolHolder_{typeof(T).Name}");
             InactiveHolder.transform.parent = UniversalUI.PoolHolder.transform;
             InactiveHolder.hideFlags |= HideFlags.HideAndDontSave;
             InactiveHolder.SetActive(false);

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using UniverseLib.Utility;
+using System;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -230,11 +231,9 @@ namespace UniverseLib.UI
             //    Universe.Log(Environment.StackTrace);
             //}
 
-            GameObject obj = new(name)
-            {
-                layer = 5,
-                hideFlags = HideFlags.HideAndDontSave,
-            };
+            GameObject obj = UnityHelpers.NewGameObject(name);
+            obj.layer = 5;
+            obj.hideFlags = HideFlags.HideAndDontSave;
 
             if (parent)
                 obj.transform.SetParent(parent.transform, false);

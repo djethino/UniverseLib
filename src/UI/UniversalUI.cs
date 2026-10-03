@@ -117,7 +117,7 @@ public static class UniversalUI
         CreateRootCanvas();
 
         // Global UI Pool Holder
-        PoolHolder = new GameObject("PoolHolder");
+        PoolHolder = UnityHelpers.NewGameObject("PoolHolder");
         PoolHolder.transform.parent = CanvasRoot.transform;
         PoolHolder.SetActive(false);
 
@@ -169,7 +169,7 @@ public static class UniversalUI
 
     private static void CreateRootCanvas()
     {
-        CanvasRoot = new GameObject("UniverseLibCanvas");
+        CanvasRoot = UnityHelpers.NewGameObject("UniverseLibCanvas");
         UnityEngine.Object.DontDestroyOnLoad(CanvasRoot);
         CanvasRoot.hideFlags |= HideFlags.HideAndDontSave;
         CanvasRoot.layer = 5;
