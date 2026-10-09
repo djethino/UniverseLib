@@ -37,6 +37,17 @@ namespace UniverseLib.Input
         // its cursor by a path the setter prefixes do not see kept being thrown out of mouse-look.
         private static bool holding;
 
+        // Whether the game showed the system cursor at the moment it was taken — read from the
+        // engine then, never from the prefixes, which a game setting it from native code bypasses.
+        private static bool visibleWhenTaken;
+
+        /// <summary>
+        /// The cursor is held while the game had the system cursor hidden — a game drawing its own,
+        /// or none. Forcing the system cursor visible loses to such a game every frame, so a consumer
+        /// that needs a pointer on screen draws one itself while this is true.
+        /// </summary>
+        public static bool HoldingAHiddenCursor => holding && !visibleWhenTaken;
+
         // A prefix failure is said once per distinct message: these run at every cursor write.
         private static readonly HashSet<string> prefixFaultsSaid = new();
 
@@ -94,6 +105,7 @@ namespace UniverseLib.Input
                         // back when it is released (the prefixes keep it current meanwhile).
                         lastLockMode = Cursor.lockState;
                         lastVisibleState = Cursor.visible;
+                        visibleWhenTaken = lastVisibleState;
                         holding = true;
                     }
 
