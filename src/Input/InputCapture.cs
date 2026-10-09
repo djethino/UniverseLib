@@ -281,6 +281,7 @@ namespace UniverseLib.Input
             _strategies.Add(_isReads);
             _isActions = new InputSystemActionStrategy();
             _strategies.Add(_isActions);
+            _strategies.Add(new RewiredControllerStrategy());
 
             foreach (var s in _strategies)
             {
@@ -1158,6 +1159,144 @@ namespace UniverseLib.Input
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
+        // Strategy 7 — switch off Rewired's keyboard and mouse
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Disables Rewired's keyboard and mouse controllers while a UI asks for them, and gives back
+        /// exactly what it took.
+        /// </summary>
+        /// <remarks>
+        /// Rewired reads the hardware itself — raw input on Windows — and hands the game actions: no
+        /// road any other strategy watches. Measured on a game built on it (2026-10-09): clicks on a
+        /// window of ours still acted in the game with the legacy patches "never came through",
+        /// no Input System action enabled, and the Input System mouse taken to no effect.
+        ///
+        /// Our own menu reads UnityEngine.Input or the Input System, never Rewired, so switching
+        /// Rewired's controllers off leaves it working. ⚠ Coarse like the devices: one mouse carries
+        /// its buttons and its movement together. A controller the game had switched off itself is
+        /// left alone and never turned on by us.
+        /// </remarks>
+        class RewiredControllerStrategy : Strategy
+        {
+            public override string Name { get { return "Rewired controllers"; } }
+
+            PropertyInfo p_isReady, p_controllers;
+            bool keyboardTaken, mouseTaken;
+
+            public override bool Serves(CaptureKind kind)
+            {
+                return kind == CaptureKind.Keyboard || kind == CaptureKind.GameClicks || kind == CaptureKind.MouseAxes;
+            }
+
+            public override void Probe()
+            {
+                // ⚠ Two spellings: Rewired's own on Mono, and the one Il2CppInterop gives it on a
+                // MelonLoader IL2CPP game, which prefixes the namespace of every non-Unity assembly.
+                // Asked for the first only, a game built on Rewired read as "does not use Rewired".
+                Type reInput = ReflectionUtility.GetTypeByName("Rewired.ReInput")
+                               ?? ReflectionUtility.GetTypeByName("Il2CppRewired.ReInput");
+                if (reInput == null)
+                {
+                    Reason = "This game does not use Rewired.";
+                    return;
+                }
+
+                p_isReady = reInput.GetProperty("isReady", BindingFlags.Public | BindingFlags.Static);
+                p_controllers = reInput.GetProperty("controllers", BindingFlags.Public | BindingFlags.Static);
+                if (p_isReady == null || p_controllers == null)
+                {
+                    Reason = "This game's Rewired is missing ReInput.isReady / ReInput.controllers.";
+                    return;
+                }
+
+                Available = true;
+                Hooked.Add("ReInput.controllers.Keyboard");
+                Hooked.Add("ReInput.controllers.Mouse");
+            }
+
+            public override void Tick()
+            {
+                bool wantKeyboard = Wants(CaptureKind.Keyboard, null);
+                bool wantMouse = Wants(CaptureKind.GameClicks, null) | Wants(CaptureKind.MouseAxes, null);
+                if (!wantKeyboard && !wantMouse && !keyboardTaken && !mouseTaken) return;
+                if (wantKeyboard || wantMouse) Asked++;
+
+                object controllers = Controllers();
+                if (controllers == null) return;
+
+                Reconcile(controllers, "Keyboard", wantKeyboard, ref keyboardTaken);
+                Reconcile(controllers, "Mouse", wantMouse, ref mouseTaken);
+            }
+
+            public override void Release()
+            {
+                if (!keyboardTaken && !mouseTaken) return;
+                object controllers = Controllers();
+                if (controllers == null) { keyboardTaken = mouseTaken = false; return; }
+                Reconcile(controllers, "Keyboard", false, ref keyboardTaken);
+                Reconcile(controllers, "Mouse", false, ref mouseTaken);
+            }
+
+            /// <summary>ReInput.controllers, or null while Rewired is not ready.</summary>
+            object Controllers()
+            {
+                try
+                {
+                    if (!(p_isReady.GetValue(null, null) is bool ready) || !ready) return null;
+                    return p_controllers.GetValue(null, null);
+                }
+                catch (Exception ex)
+                {
+                    GiveUp("reading ReInput failed: " + ex.Message);
+                    return null;
+                }
+            }
+
+            /// <summary>
+            /// One controller in line with what is wanted: switched off when wanted and on, given
+            /// back when no longer wanted and it was us who switched it off.
+            /// </summary>
+            void Reconcile(object controllers, string which, bool want, ref bool taken)
+            {
+                object controller;
+                PropertyInfo p_enabled;
+                try
+                {
+                    controller = controllers.GetType().GetProperty(which)?.GetValue(controllers, null);
+                    p_enabled = controller?.GetType().GetProperty("enabled");
+                }
+                catch (Exception ex) { GiveUp($"reading the {which} controller failed: {ex.Message}"); return; }
+                if (controller == null || p_enabled == null) return;
+
+                try
+                {
+                    bool enabled = (bool)p_enabled.GetValue(controller, null);
+                    if (want && enabled)
+                    {
+                        p_enabled.SetValue(controller, false, null);
+                        if (!taken) Silenced++;
+                        taken = true;
+                    }
+                    else if (!want && taken)
+                    {
+                        if (!enabled) p_enabled.SetValue(controller, true, null);
+                        taken = false;
+                    }
+                }
+                catch (Exception ex) { GiveUp($"switching the {which} controller failed: {ex.Message}"); }
+            }
+
+            /// <summary>Stop for the session, give back what was taken, and say so once.</summary>
+            void GiveUp(string why)
+            {
+                Available = false;
+                Reason = "This game's Rewired controllers could not be switched: " + why;
+                Universe.LogWarning($"[InputCapture] {Name}: {why} — switched off for this session");
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
         // Strategy 6 — switch off the game's Input System ACTIONS
         // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1290,18 +1429,28 @@ namespace UniverseLib.Input
                 // reading its clicks and keys through actions with every one of them — clicks on our
                 // windows acted in the game, typing in our fields moved it (0 taken of 519 asked).
                 bool ourUiReadsActions = InputManager.inputHandler is InputSystem;
-                if (ourUiReadsActions && ours.Count == 0) { ours_ = null; return; }
+                if (ourUiReadsActions && ours.Count == 0)
+                {
+                    Note("noours", "our UI reads actions and none of them was found yet — nothing is taken until they are");
+                    ours_ = null;
+                    return;
+                }
 
                 object list;
                 try { list = m_listEnabled.Invoke(null, null); }
                 catch (Exception ex) { GiveUp("listing the enabled actions failed: " + ex.Message); return; }
 
+                int listed = 0;
                 foreach (object a in Items(list))
                 {
-                    if (a == null) continue;
+                    listed++;
+                    if (a == null) { Note("null", "an enabled action came back null"); continue; }
                     string id = IdOf(p_id, a);
-                    if (id == null || ours.Contains(id)) continue;
-                    if ((ReadsOf(id, a) & wanted) == 0) continue;
+                    if (id == null) { Note("noid:" + a.GetType().FullName, "an enabled action has no readable id (" + a.GetType().FullName + ") — it cannot be taken"); continue; }
+                    if (ours.Contains(id)) { NoteAction(id, a, "ours, left alone"); continue; }
+                    Reads reads = ReadsOf(id, a);
+                    NoteAction(id, a, "reads " + reads);
+                    if ((reads & wanted) == 0) continue;
 
                     if (Toggle(a, off: true))
                     {
@@ -1309,6 +1458,9 @@ namespace UniverseLib.Input
                         held[id] = new Held { Action = a, MapId = MapIdOf(a) };
                     }
                 }
+
+                Note("listed:" + listed + "/" + (list == null ? "null" : list.GetType().FullName),
+                     $"{listed} enabled action(s) listed (list type {(list == null ? "null" : list.GetType().FullName)}), wanted {wanted}, {ours.Count} of ours");
 
                 // What is held but no longer wanted goes back — the kinds change independently.
                 if (held.Count > 0)
@@ -1351,6 +1503,43 @@ namespace UniverseLib.Input
             }
 
             HashSet<string> ours_;
+
+            // 🔴 Said once per distinct fact, never "the first N" (2026-10-09: a game reading its
+            // clicks through actions had none taken — 0 of 14 291 asked — and nothing said which
+            // step turned them away: the list, the id, the bindings).
+            readonly HashSet<string> said = new HashSet<string>();
+
+            void Note(string key, string text)
+            {
+                if (said.Add(key)) Universe.Log($"[InputCapture] {Name}: {text}");
+            }
+
+            void NoteAction(string id, object action, string verdict)
+            {
+                if (!said.Add("action:" + id + ":" + verdict)) return;
+                string name = null, map = null, bindings = null;
+                try { name = action.GetType().GetProperty("name")?.GetValue(action, null) as string; } catch (Exception ex) { name = "(" + ex.GetType().Name + ")"; }
+                try
+                {
+                    object m = p_actionMap?.GetValue(action, null);
+                    map = m?.GetType().GetProperty("name")?.GetValue(m, null) as string;
+                }
+                catch (Exception ex) { map = "(" + ex.GetType().Name + ")"; }
+                try
+                {
+                    var layouts = new List<string>();
+                    foreach (object c in Items(p_controls.GetValue(action, null)))
+                    {
+                        object dev = p_controlDevice.GetValue(c, null);
+                        string d = dev == null ? "?" : p_deviceLayout.GetValue(dev, null) as string;
+                        string cl = p_controlLayout?.GetValue(c, null) as string;
+                        layouts.Add(d + "/" + cl);
+                    }
+                    bindings = layouts.Count == 0 ? "no control" : string.Join(", ", layouts.ToArray());
+                }
+                catch (Exception ex) { bindings = "controls unreadable: " + ex.GetType().Name + " " + ex.Message; }
+                Universe.Log($"[InputCapture] {Name}: '{map}/{name}' {verdict} — {bindings}");
+            }
 
             /// <summary>The game switched something off itself: it stays off when we let go.</summary>
             internal void ForgetGameDisabled(object instance)
