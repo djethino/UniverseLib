@@ -1362,6 +1362,16 @@ namespace UniverseLib.UI
             // Set up the AutoSliderScrollbar module
 
             AutoSliderScrollbar autoScroller = new(hiddenScrollbar, scrollSlider, contentRect, viewportRect);
+            // The track shows only while there is something to scroll, as a scroll view's does.
+            autoScroller.FoldWhenFits = scrollBarObj;
+            // The grip sits under the track's Mask and the slider's, inside a list's and a panel's:
+            // nested that deep, the stencil culled it — laid out, grey, answering the pointer, and
+            // never drawn (2026-10-09, a field in a scrolling list). The same cure as the
+            // consumer's dropdown grip: it never leaves its track, so it needs no masking. Folded,
+            // the grip has no height (UpdateSliderHandle), so unmasked it still shows nothing.
+            Image gripImage = autoScroller.Slider.handleRect != null ? autoScroller.Slider.handleRect.GetComponent<Image>() : null;
+            if (gripImage != null) gripImage.maskable = false;
+            autoScroller.UpdateSliderHandle();
 
 #if MONO
             GameObject sliderContainer = m_HandleContainerRect_handler.GetValue(autoScroller.Slider).gameObject;

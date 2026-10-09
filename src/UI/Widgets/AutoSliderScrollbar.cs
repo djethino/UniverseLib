@@ -109,8 +109,10 @@ namespace UniverseLib.UI.Widgets
                 Slider.handleRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, 0f);
                 Slider.value = 0f;
                 Slider.interactable = false;
+                ShowTrack(false);
                 return;
             }
+            ShowTrack(true);
 
             float handleHeight = viewportHeight * Math.Min(1, viewportHeight / totalHeight);
             // Floor the grip at a grabbable size: with very long content (a few hundred rows) the
@@ -138,6 +140,40 @@ namespace UniverseLib.UI.Widgets
                 val = (float)((decimal)ContentRect.localPosition.y / (decimal)(totalHeight - ViewportRect.rect.height));
 
             Slider.value = val;
+        }
+
+        /// <summary>
+        /// The track to fold away while everything fits, or null to leave it always drawn (a scroll
+        /// view's own DynamicScrollbar hides it there). Set by CreateScrollInputField: a text box
+        /// showed a bare dark track beside text that needed no scrolling, where every other
+        /// scrolling area of a consumer hides it — and, once a consumer gave a box room for all it
+        /// holds, an empty column nobody could explain. Folded to no width rather than switched
+        /// off: switched off, this model stops being updated and the track would never come back.
+        /// The track's own Mask then shows nothing, and the text takes the column's width.
+        ///
+        /// ⚠ **Not faded with a CanvasGroup** (2026-10-09). Faded out and back in, the grip came
+        /// back laid out, grey and active — and unseen, while the wheel moved the text: the
+        /// track's Mask did not draw its stencil again. Its width says the same thing with no
+        /// transparency for a mask to get wrong.
+        /// </summary>
+        public GameObject FoldWhenFits { get; set; }
+
+        /// <summary>The track's width while it is shown.</summary>
+        public float TrackWidth { get; set; } = 25f;
+
+        void ShowTrack(bool shown)
+        {
+            if (FoldWhenFits == null) return;
+
+            // The track's own layout group answers with its children's width; switched off while
+            // hidden, only the track's width below counts. (LayoutElement.layoutPriority would say
+            // the same, and is read-only on the oldest Unity this library is built against.)
+            var group = FoldWhenFits.GetComponent<VerticalLayoutGroup>();
+            if (group != null) group.enabled = shown;
+            var width = FoldWhenFits.GetComponent<LayoutElement>();
+            if (width == null) return;
+            width.minWidth = shown ? TrackWidth : 0f;
+            width.preferredWidth = shown ? TrackWidth : 0f;
         }
 
         public void OnScrollbarValueChanged(float value)
