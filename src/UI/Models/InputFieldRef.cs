@@ -54,9 +54,15 @@ namespace UniverseLib.UI.Models
         public Text PlaceholderText { get; }
 
         /// <summary>
-        /// The GameObject which the InputField is attached to.
+        /// The GameObject which the InputField is attached to — null once it is destroyed.
         /// </summary>
-        public override GameObject UIRoot => Component.gameObject;
+        /// <remarks>
+        /// Asked by <see cref="UIBehaviourModel.UpdateInstances"/> to drop a model whose UI is gone:
+        /// reading <c>gameObject</c> off a destroyed component throws instead of answering, and
+        /// that loop's single try then stopped every model's Update, every frame, for the rest of
+        /// the session (a list rebuilt its rows, each holding a scrolling field).
+        /// </remarks>
+        public override GameObject UIRoot => Component ? Component.gameObject : null;
 
         /// <summary>
         /// The GameObject which the InputField is attached to.
