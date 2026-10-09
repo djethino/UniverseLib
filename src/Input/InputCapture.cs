@@ -1285,7 +1285,12 @@ namespace UniverseLib.Input
                 var ours = ours_ ?? (ours_ = OurActions());
                 // 🔴 Nothing of ours found means our module is not there (yet) — never guess: with
                 // no list to spare, the menu's own clicks would be switched off with the game's.
-                if (ours.Count == 0) { ours_ = null; return; }
+                // ⚠ Only when our UI READS actions at all. On the legacy handler (StandaloneInputModule)
+                // it reads none, and the empty list is the true answer: refusing there left a game
+                // reading its clicks and keys through actions with every one of them — clicks on our
+                // windows acted in the game, typing in our fields moved it (0 taken of 519 asked).
+                bool ourUiReadsActions = InputManager.inputHandler is InputSystem;
+                if (ourUiReadsActions && ours.Count == 0) { ours_ = null; return; }
 
                 object list;
                 try { list = m_listEnabled.Invoke(null, null); }
