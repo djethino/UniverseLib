@@ -757,6 +757,16 @@ namespace UniverseLib.Input
         /// behind a window that was supposed to be holding it. Capped in lines as well as in
         /// frames: a busy scene raycasts dozens of times per frame.
         /// </remarks>
+        /// <summary>
+        /// Whether a strategy says what it found as it finds it (an action read, a controller
+        /// switched): the consumer's debug setting, asked each time so turning it on takes effect
+        /// at once. Asked BEFORE a fact is marked as said, so one met while it was off is still
+        /// said once it is on. Null: quiet.
+        /// </summary>
+        public static Func<bool> Verbosity { get; set; }
+
+        static bool Verbose => Verbosity != null && Verbosity();
+
         public static void DiagnoseNext(int frames)
         {
             _diagnoseFrames = frames;
@@ -1511,12 +1521,12 @@ namespace UniverseLib.Input
 
             void Note(string key, string text)
             {
-                if (said.Add(key)) Universe.Log($"[InputCapture] {Name}: {text}");
+                if (Verbose && said.Add(key)) Universe.Log($"[InputCapture] {Name}: {text}");
             }
 
             void NoteAction(string id, object action, string verdict)
             {
-                if (!said.Add("action:" + id + ":" + verdict)) return;
+                if (!Verbose || !said.Add("action:" + id + ":" + verdict)) return;
                 string name = null, map = null, bindings = null;
                 try { name = action.GetType().GetProperty("name")?.GetValue(action, null) as string; } catch (Exception ex) { name = "(" + ex.GetType().Name + ")"; }
                 try
