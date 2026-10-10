@@ -35,9 +35,14 @@ public static class ICallManager
     /// <exception cref="MissingMethodException" />
     public static bool TryGetICall<T>(string signature, out T? iCall) where T : Delegate
     {
-        iCall = GetICall<T>(signature);
+        // A probe: the caller has another way (AssetBundle tries Unity 6's _Injected names, then the
+        // older ones). Not finding it is an answer, not a fault — said nowhere, and remembered, so the
+        // three bundle calls of a start do not each warn and look again.
+        iCall = Resolve<T>(signature, warn: false);
         return iCall != null;
     }
+
+    private static readonly HashSet<string> iCallAbsent = new();
 
 
     /// <summary>
@@ -48,19 +53,23 @@ public static class ICallManager
     /// <param name="signature">The signature of the iCall you want to get.</param>
     /// <returns>The <typeparamref name="T"/> delegate if successful.</returns>
     /// <exception cref="MissingMethodException" />
-    public static T? GetICall<T>(string signature) where T : Delegate
+    public static T? GetICall<T>(string signature) where T : Delegate => Resolve<T>(signature, warn: true);
+
+    private static T? Resolve<T>(string signature, bool warn) where T : Delegate
     {
         if (iCallCache.TryGetValue(signature, out var sig))
         {
             return (T)sig;
         }
+        if (!warn && iCallAbsent.Contains(signature)) return null;
         // In Unity 6000, most iCall signatures have been renamed from xxx to xxx_Injected.
         if (!(
                 TryResolveICall(signature, out var ptr) ||
                 TryResolveICall($"{signature}_Injected", out ptr)
             ))
         {
-            Universe.LogWarning($"Could not find any iCall with the signature '{signature}'!");
+            iCallAbsent.Add(signature);
+            if (warn) Universe.LogWarning($"Could not find any iCall with the signature '{signature}'!");
             return null;
         }
 
