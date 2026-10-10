@@ -108,11 +108,12 @@ public static class ICallManager
             return (T)signature;
         }
 
-        var loopSig = new List<string>(possibleSignatures);
-        // In Unity 6000, most iCall signatures have been renamed from xxx to xxx_Injected.
-        loopSig.Concat(possibleSignatures.Select(s => $"{s}_Injected"));
-
-        foreach (string sig in loopSig)
+        // ⚠ No "_Injected" names here: a Unity 6 _Injected function takes other arguments (a string or
+        // an array travels as a ManagedSpanWrapper, an object comes back as a GC handle), so calling it
+        // through T would hand the engine wrong arguments. A caller that wants one names it, with its
+        // own delegate (AssetBundle.LoadFromFile / LoadFromMemory). An earlier line meant to add them
+        // discarded its own result (Concat), which is what kept this safe.
+        foreach (string sig in possibleSignatures)
         {
             if (TryResolveICall(sig, out var ptr))
             {

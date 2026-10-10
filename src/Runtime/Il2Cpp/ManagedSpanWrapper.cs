@@ -29,5 +29,22 @@ public struct ManagedSpanWrapper
             return act.Invoke(span);
         }
     }
+
+    /// <summary>
+    /// Pins a byte array and creates a ManagedSpanWrapper over it (length in bytes), as Unity 6's
+    /// own bindings do for a byte[] argument (AssetBundle.LoadFromMemory_Internal).
+    /// </summary>
+    internal static unsafe IntPtr Invoke(byte[] bytes, Func<ManagedSpanWrapper, IntPtr> act)
+    {
+        fixed (byte* bytePtr = bytes)
+        {
+            var span = new ManagedSpanWrapper
+            {
+                begin = bytePtr,
+                length = bytes.Length
+            };
+            return act.Invoke(span);
+        }
+    }
 }
 #endif
