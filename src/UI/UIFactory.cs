@@ -1139,7 +1139,12 @@ namespace UniverseLib.UI
         public static GameObject CreateSliderScrollbar(GameObject parent, out Slider slider)
         {
             GameObject mainObj = CreateUIObject("SliderScrollbar", parent, smallElementSize);
-            mainObj.AddComponent<Mask>().showMaskGraphic = false;
+            // ⚠ No Mask here nor on the background (2026-10-14). The two Masks upstream put on this
+            // bar culled its grip from Unity 2019 on (2021.3 to 6000.6, Mono and IL2CPP alike;
+            // 2018.4 drew it): laid out, coloured, answering the pointer, never drawn. Unmasking
+            // the grip instead let it escape every Mask above it — scrolled out of a list, it was
+            // drawn over the window. The grip never leaves its bar; the Masks above clip it.
+            // Measured on the consumer's bench, -probeMode maskstack.
             mainObj.AddComponent<Image>().color = new(0.1f, 0.1f, 0.1f, 1);
 
             GameObject bgImageObj = CreateUIObject("Background", mainObj);
@@ -1149,8 +1154,6 @@ namespace UniverseLib.UI
             Image bgImage = bgImageObj.AddComponent<Image>();
             bgImage.type = Image.Type.Sliced;
             bgImage.color = new Color(0.05f, 0.05f, 0.05f, 1.0f);
-
-            bgImageObj.AddComponent<Mask>();
 
             RectTransform bgRect = bgImageObj.GetComponent<RectTransform>();
             bgRect.pivot = new Vector2(0, 1);
@@ -1364,13 +1367,7 @@ namespace UniverseLib.UI
             AutoSliderScrollbar autoScroller = new(hiddenScrollbar, scrollSlider, contentRect, viewportRect);
             // The track shows only while there is something to scroll, as a scroll view's does.
             autoScroller.FoldWhenFits = scrollBarObj;
-            // The grip sits under the track's Mask and the slider's, inside a list's and a panel's:
-            // nested that deep, the stencil culled it — laid out, grey, answering the pointer, and
-            // never drawn (2026-10-09, a field in a scrolling list). The same cure as the
-            // consumer's dropdown grip: it never leaves its track, so it needs no masking. Folded,
-            // the grip has no height (UpdateSliderHandle), so unmasked it still shows nothing.
-            Image gripImage = autoScroller.Slider.handleRect != null ? autoScroller.Slider.handleRect.GetComponent<Image>() : null;
-            if (gripImage != null) gripImage.maskable = false;
+            // The grip stays maskable: clipped by the list holding this field (see CreateSliderScrollbar).
             autoScroller.UpdateSliderHandle();
 
 #if MONO
