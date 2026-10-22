@@ -159,7 +159,9 @@ namespace UniverseLib.UI.Widgets
                 UpdateScrollbarVisibility();
                 // One line per change, which is the event looked for (a window's content seen
                 // narrowing by the scrollbar's width for one frame at a tab switch, 2026-10-22):
-                // what was measured, and how high each block of the content stood.
+                // what was measured, and how high each block of the content stood. Behind the
+                // host's debug switch — the one UniverseLib already holds (InputCapture.Verbosity).
+                if (Input.InputCapture.Verbosity == null || !Input.InputCapture.Verbosity()) return;
                 var blocks = new System.Text.StringBuilder();
                 for (int i = 0; i < _content.childCount; i++)
                 {
