@@ -129,6 +129,12 @@ namespace UniverseLib.UI.Widgets
             contentHeight = _content.rect.height;
             viewportHeight = _viewport.rect.height;
 
+            // A window with no height yet has not been laid out: nothing to decide, and the next
+            // frame — when it has its size — asks again (nothing is remembered). Measured: a list
+            // on the Tools tab read viewport 0 on the frame it appeared, took its scrollbar, and
+            // gave it back at the next with its 80 px.
+            if (viewportHeight <= 0f) return;
+
             _lastContentHeight = contentHeight;
             _lastViewportHeight = viewportHeight;
 
