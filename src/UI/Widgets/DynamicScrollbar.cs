@@ -41,6 +41,8 @@ namespace UniverseLib.UI.Widgets
         private RectTransform _viewport;
         private RectTransform _content;
         private GameObject _scrollbarObj;
+        private ContentSizeFitter _fitter;
+        private HorizontalOrVerticalLayoutGroup _group;
 
         private bool _scrollbarVisible = true;
         private float _lastContentHeight;
@@ -86,6 +88,9 @@ namespace UniverseLib.UI.Widgets
             var viewportTransform = UnityHelpers.FindChild(transform, "Viewport");
             _viewport = viewportTransform != null ? viewportTransform.GetComponent<RectTransform>() : null;
             _content = _scrollRect.content;
+            // How the content is sized: by its layout (a fitter over a group), or by code.
+            _fitter = _content != null ? _content.GetComponent<ContentSizeFitter>() : null;
+            _group = _content != null ? _content.GetComponent<HorizontalOrVerticalLayoutGroup>() : null;
             var scrollbarTransform = UnityHelpers.FindChild(transform, "AutoSliderScrollbar");
             _scrollbarObj = scrollbarTransform != null ? scrollbarTransform.gameObject : null;
 
@@ -127,8 +132,20 @@ namespace UniverseLib.UI.Widgets
             _lastContentHeight = contentHeight;
             _lastViewportHeight = viewportHeight;
 
+            // 🔴 **What the children need, not the height the content was given** (2026-10-22,
+            // measured). A content kept at least as tall as its window (FillViewportHeight) is
+            // made max(window, children) from a copy of the window's height taken in ITS
+            // LateUpdate — one frame stale, in an order nothing guarantees against this one. So
+            // a window that shrank (the font sub-tabs appearing: 1091 kept for 1056) or the
+            // measure of every tab at once (3462) read as an overflow for one frame, and the
+            // content gave its 28 px to a scrollbar it did not need. Sized by its layout, the
+            // content overflows exactly when its group's children ask for more than the window.
+            float need = contentHeight;
+            if (_fitter != null && _fitter.verticalFit == ContentSizeFitter.FitMode.PreferredSize && _group != null)
+                need = _group.preferredHeight;
+
             // Determine if scrollbar is needed (with buffer to avoid flickering)
-            bool needsScrollbar = contentHeight > viewportHeight + FlickerBuffer;
+            bool needsScrollbar = need > viewportHeight + FlickerBuffer;
 
             if (needsScrollbar != _scrollbarVisible)
             {
@@ -145,7 +162,7 @@ namespace UniverseLib.UI.Widgets
                     blocks.Append(child.name).Append(' ').Append(child.rect.height.ToString("0")).Append("; ");
                 }
                 Universe.Log($"[DynamicScrollbar] {name} {(needsScrollbar ? "shown" : "hidden")} at frame {Time.frameCount}: "
-                             + $"content {contentHeight:0}, viewport {viewportHeight:0} | {blocks}");
+                             + $"content {contentHeight:0}, children need {need:0}, viewport {viewportHeight:0} | {blocks}");
             }
         }
 
