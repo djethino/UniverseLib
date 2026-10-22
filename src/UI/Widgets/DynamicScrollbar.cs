@@ -113,6 +113,17 @@ namespace UniverseLib.UI.Widgets
                 return;
             }
 
+            // 🔴 **Decided on the layout as it stands now, not on the last frame's** (2026-10-22,
+            // measured: every tab switch of a window took its 28 px for ONE frame, 1070 -> 1042 ->
+            // 1070, its content ending exactly as high as the window). The rect read here is the
+            // layout computed at the end of the previous frame; right after a tab is shown, it is
+            // the content before its lists were given their share of the height — taller than the
+            // window, for a frame. Rebuilt first, the content has the height it will be drawn at.
+            // Only when a height moved, which is when the answer can change: never every frame.
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_content);
+            contentHeight = _content.rect.height;
+            viewportHeight = _viewport.rect.height;
+
             _lastContentHeight = contentHeight;
             _lastViewportHeight = viewportHeight;
 
