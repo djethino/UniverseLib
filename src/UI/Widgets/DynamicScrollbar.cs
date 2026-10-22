@@ -134,6 +134,18 @@ namespace UniverseLib.UI.Widgets
             {
                 _scrollbarVisible = needsScrollbar;
                 UpdateScrollbarVisibility();
+                // One line per change, which is the event looked for (a window's content seen
+                // narrowing by the scrollbar's width for one frame at a tab switch, 2026-10-22):
+                // what was measured, and how high each block of the content stood.
+                var blocks = new System.Text.StringBuilder();
+                for (int i = 0; i < _content.childCount; i++)
+                {
+                    var child = _content.GetChild(i).GetComponent<RectTransform>();
+                    if (child == null || !child.gameObject.activeSelf) continue;
+                    blocks.Append(child.name).Append(' ').Append(child.rect.height.ToString("0")).Append("; ");
+                }
+                Universe.Log($"[DynamicScrollbar] {name} {(needsScrollbar ? "shown" : "hidden")} at frame {Time.frameCount}: "
+                             + $"content {contentHeight:0}, viewport {viewportHeight:0} | {blocks}");
             }
         }
 
